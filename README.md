@@ -88,3 +88,16 @@ Bottom of the terminal, always above the on-screen keyboard:
 - **✎** toggles **Compose**: a multi-line box (keyboard voice dictation works) and `➤` sends it as a paste followed by Enter. Empty box + `➤` = Enter. `Ctrl+Enter` sends on desktop. Drafts are kept per session. Chips above the box are the `snippets` and send in one tap.
 - **⌨** shows/hides the keyboard. In Terminal mode a tap on the screen also opens it; dragging only scrolls.
 - **A− / A+** in the header change the font size (remembered per device). The server resizes the PTY to match.
+
+## Claude Code hooks (session states)
+
+Cards show what Claude is doing: `idle`, `working`, `permission` (waiting for you), `done`, `error`, plus the current tool / last message. This comes from Claude Code hooks:
+
+1. `npm run build` (builds `hooks/dist/cc-hook.mjs`).
+2. `npm run hooks:settings` prints the `hooks` block for `~/.claude/settings.json`. Merge it by hand (append to existing event arrays). `npm run hooks:settings -- --merge <settings.json>` prints a merged copy without touching the file.
+
+The hook is registered `async` (never blocks Claude) and is a no-op unless `CCC_SESSION_ID` is set, i.e. outside cc-cockpit PTYs it exits immediately and prints nothing. Inside a PTY it POSTs the event to `http://127.0.0.1:<hookPort>/hook` (default `port + 1`) with `hookSecret`. That port listens on loopback only and is not forwarded by `tailscale serve`.
+
+State rules: prompt → `working`; `PermissionRequest` / permission notification → `permission`; answering it from the cockpit (`1`-`9`, `y`, `n`, `Enter`, `Esc`) → `working`; `Stop` → `done`; `StopFailure` → `error`. Esc / Ctrl+C has no hook: if Claude's spinner line disappears right after, the session goes `idle`.
+
+Every event is appended to `data/events.db` (SQLite, `node:sqlite`); the stats screen derives everything from it.

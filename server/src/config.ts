@@ -10,6 +10,8 @@ export interface Config {
   /** Extra Host-header names to accept (e.g. a custom DNS name). Loopback and *.ts.net are built in. */
   allowedHosts: string[];
   port: number;
+  /** Loopback-only port of the hook endpoint (default: port + 1). Never exposed via tailscale serve. */
+  hookPort: number;
   webDevPort: number;
   shell: string;
   shellArgs: string[];
@@ -62,6 +64,9 @@ function validate(c: Partial<Config>): Config {
 
   str('host');
   num('port');
+  if (c.hookPort === undefined && Number.isInteger(c.port)) c.hookPort = c.port! + 1;
+  num('hookPort');
+  if (c.hookPort === c.port || c.hookPort === c.webDevPort) errors.push('hookPort: must differ from port and webDevPort');
   num('webDevPort');
   str('shell');
   str('startupCommand');

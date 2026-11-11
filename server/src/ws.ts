@@ -33,6 +33,9 @@ export function attachWebSocket(server: Server, { manager, auth, isAllowedHost }
   manager.onChange((sessions) => {
     for (const c of clients) send(c, { type: 'sessions', sessions });
   });
+  manager.onActivity((activity) => {
+    for (const c of clients) send(c, { type: 'activity', activity });
+  });
   manager.onRemoved((id) => {
     for (const c of clients) {
       if (c.session?.id !== id) continue;
@@ -116,7 +119,9 @@ export function attachWebSocket(server: Server, { manager, auth, isAllowedHost }
       case 'input':
         // PTY size follows the last active client.
         if (c.size) s?.resize(c.size.cols, c.size.rows);
-        s?.write(msg.data);
+        if (!s) break;
+        s.write(msg.data);
+        manager.noteInput(s, msg.data);
         break;
       case 'resize':
         if (!s) break;

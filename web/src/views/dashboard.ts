@@ -1,8 +1,16 @@
-import { MAX_SESSION_NAME, type Favorite, type SessionInfo } from '@ccc/shared';
+import { MAX_SESSION_NAME, type Activity, type Favorite, type SessionInfo, type SessionState } from '@ccc/shared';
 import { api } from '../api';
 import { el, relTime, shortPath, toast } from '../dom';
 
 const KILL_ARM_MS = 3000;
+
+export const STATE_LABEL: Record<SessionState, string> = {
+  idle: 'idle',
+  working: 'working',
+  waiting_permission: 'permission',
+  done: 'done',
+  error: 'error',
+};
 
 interface CardRefs {
   root: HTMLElement;
@@ -10,6 +18,7 @@ interface CardRefs {
   path: HTMLElement;
   state: HTMLElement;
   preview: HTMLElement;
+  activity: HTMLElement;
   meta: HTMLElement;
   kill: HTMLButtonElement;
   previewKey: string;
@@ -49,7 +58,7 @@ export class Dashboard {
       this.empty,
       this.dialog.root,
     );
-    setInterval(() => this.refreshTimes(), 30_000);
+    setInterval(() => this.refreshTimes(), 15_000);
   }
 
   async loadFavorites(): Promise<void> {
@@ -87,12 +96,27 @@ export class Dashboard {
     count.textContent = sessions.length ? String(sessions.length) : '';
   }
 
+  /** Card element of a session (effects anchor on it). */
+  card(id: string): HTMLElement | null {
+    return this.cards.get(id)?.root ?? null;
+  }
+
+  /** Live hook activity: re-trigger the card's activity blink. */
+  activity(a: Activity): void {
+    const c = this.cards.get(a.sessionId);
+    if (!c || !a.detail || a.kind === 'notification') return;
+    c.activity.classList.remove('tick');
+    void c.activity.offsetWidth;
+    c.activity.classList.add('tick');
+  }
+
   private buildCard(s: SessionInfo): CardRefs {
     const refs = {
       name: el('span', { class: 'sc-name' }),
       path: el('span', { class: 'sc-path' }),
       state: el('span', { class: 'badge' }),
       preview: el('div', { class: 'sc-preview' }),
+      activity: el('div', { class: 'sc-activity' }),
       meta: el('div', { class: 'sc-meta' }),
       kill: el('button', { class: 'icon-btn danger', title: 'Kill session', 'aria-label': 'Kill session' }, '✕'),
       previewKey: '',
@@ -103,6 +127,7 @@ export class Dashboard {
       { class: 'sc', tabIndex: 0, role: 'button', 'aria-label': `Open ${s.name}` },
       el('div', { class: 'sc-top' }, el('i', { class: 'sc-dot' }), refs.name, refs.state, rename, refs.kill),
       refs.path,
+      refs.activity,
       refs.preview,
       refs.meta,
     );
@@ -144,7 +169,9 @@ export class Dashboard {
     c.name.textContent = s.name;
     c.path.textContent = shortPath(s.cwd, 3);
     c.path.title = s.cwd;
-    c.state.textContent = s.running ? s.state.replace('_', ' ') : `exited ${s.exitCode ?? ''}`.trim();
+    c.state.textContent = s.running ? STATE_LABEL[s.state] : `exited ${s.exitCode ?? ''}`.trim();
+    c.activity.textContent = s.activity ?? '';
+    c.activity.title = s.activity ?? '';
     const key = s.preview.join('\n');
     if (key !== c.previewKey) {
       c.previewKey = key;
@@ -157,6 +184,8 @@ export class Dashboard {
       c.preview.classList.add('tick');
     }
     c.meta.dataset.created = String(s.createdAt);
+    c.meta.dataset.since = String(s.stateSince);
+    c.meta.dataset.state = s.running ? STATE_LABEL[s.state] : '';
     c.meta.dataset.viewers = String(s.viewers);
     this.fillMeta(c.meta);
   }
@@ -164,7 +193,8 @@ export class Dashboard {
   private fillMeta(meta: HTMLElement): void {
     const viewers = Number(meta.dataset.viewers);
     const age = relTime(Number(meta.dataset.created));
-    meta.textContent = `up ${age}${viewers ? ` · ${viewers} viewing` : ''}`;
+    const state = meta.dataset.state ? `${meta.dataset.state} ${relTime(Number(meta.dataset.since)).replace('now', '<1m')} · ` : '';
+    meta.textContent = `${state}up ${age}${viewers ? ` · ${viewers} viewing` : ''}`;
   }
 
   private refreshTimes(): void {

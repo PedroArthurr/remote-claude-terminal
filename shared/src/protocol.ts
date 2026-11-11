@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export const WS_PATH = '/ws';
 
@@ -14,6 +14,54 @@ export const SESSION_STATES = ['idle', 'working', 'waiting_permission', 'done', 
 export type SessionState = (typeof SESSION_STATES)[number];
 
 export const MAX_SESSION_NAME = 40;
+
+// ── Hooks (Claude Code → hook script → local endpoint) ──
+
+/** Path of the hook endpoint. It listens on its own loopback-only port (config `hookPort`). */
+export const HOOK_PATH = '/hook';
+
+/** Body the hook script POSTs. `event` is the raw JSON Claude Code wrote to the hook's stdin. */
+export interface HookEnvelope {
+  /** CCC_SESSION_ID of the PTY the hook ran in. */
+  sessionId: string;
+  /** Hook process start (ms epoch). Hooks run async, so this orders events that arrive out of order. */
+  t: number;
+  event: Record<string, unknown>;
+}
+
+/** What happened, normalized from hook events (plus a few the server infers). Drives effects. */
+export type ActivityKind =
+  | 'session_start'
+  | 'session_end'
+  | 'prompt'
+  | 'tool'
+  | 'tool_done'
+  | 'tool_failed'
+  | 'permission'
+  | 'permission_answered'
+  | 'permission_denied'
+  | 'notification'
+  | 'subagent_start'
+  | 'subagent_stop'
+  | 'compact'
+  | 'done'
+  | 'error'
+  | 'interrupted';
+
+export type ToolCategory = 'edit' | 'read' | 'search' | 'shell' | 'web' | 'agent' | 'mcp' | 'other';
+
+export interface Activity {
+  sessionId: string;
+  kind: ActivityKind;
+  /** ms epoch. */
+  t: number;
+  /** Session state after this activity. */
+  state: SessionState;
+  tool?: string;
+  category?: ToolCategory;
+  /** Short human text (tool target, prompt, last message...). */
+  detail?: string;
+}
 
 export interface HealthResponse {
   ok: true;
@@ -39,8 +87,14 @@ export interface SessionInfo {
   id: string;
   name: string;
   cwd: string;
-  /** Placeholder until hooks land (Marco 4). */
+  /** Derived from Claude Code hooks. */
   state: SessionState;
+  /** When `state` was entered (ms epoch). */
+  stateSince: number;
+  /** One line on what Claude is doing / did (tool + target, last message...). */
+  activity: string | null;
+  /** Model reported by SessionStart. */
+  model: string | null;
   running: boolean;
   exitCode: number | null;
   createdAt: number;
@@ -107,4 +161,6 @@ export type ServerMessage =
   | { type: 'sessions'; sessions: SessionInfo[] }
   /** The attached session was closed. */
   | { type: 'closed'; sessionId: string }
+  /** Live activity of any session (not only the attached one). */
+  | { type: 'activity'; activity: Activity }
   | { type: 'pong'; t: number };

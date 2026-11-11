@@ -2,6 +2,7 @@
   "host": "127.0.0.1",
   "allowedHosts": [],
   "port": 7420,
+  "hookPort": 7421,
   "webDevPort": 5173,
   "shell": "pwsh.exe",
   "shellArgs": ["-NoLogo"],

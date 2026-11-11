@@ -13,7 +13,8 @@
     "dev": "concurrently -k -n server,web -c cyan,magenta \"npm run dev -w server\" \"npm run dev -w web\"",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "start": "node server/dist/index.js"
+    "start": "node --disable-warning=ExperimentalWarning server/dist/index.js",
+    "hooks:settings": "node hooks/settings-snippet.mjs"
   },
   "engines": {
     "node": ">=22.12"

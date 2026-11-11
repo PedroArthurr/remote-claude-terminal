@@ -755,6 +755,11 @@ button {
   --tone-rgb: 255 200 87;
 }
 
+.sc[data-state='done'] {
+  --tone: #b48cff;
+  --tone-rgb: 180 140 255;
+}
+
 .sc[data-state='error'],
 .sc[data-state='exited'] {
   --tone: var(--bad);
@@ -821,6 +826,25 @@ button {
   color: var(--muted);
   font-size: 0.72rem;
   direction: ltr;
+}
+
+.sc-activity {
+  min-height: 1.1em;
+  margin-top: -0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tone);
+  font-size: 0.72rem;
+}
+
+.sc-activity:empty::before {
+  content: '·';
+  color: var(--muted);
+}
+
+.sc-activity.tick {
+  animation: tick 600ms ease;
 }
 
 .sc-preview {

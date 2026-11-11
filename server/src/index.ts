@@ -14,15 +14,19 @@ import {
 } from '@ccc/shared';
 import { createAuth } from './auth';
 import { loadConfig } from './config';
+import { startHookServer } from './hook-server';
 import { createHostCheck, isLoopback, requestHostname } from './net';
 import { WEB_DIST } from './paths';
 import { SessionError, SessionManager } from './sessions';
+import { EventStore } from './store';
 import { attachWebSocket } from './ws';
 
 const config = loadConfig();
 const auth = createAuth(config.token);
 const isAllowedHost = createHostCheck(config.host, config.allowedHosts);
-const manager = new SessionManager(config);
+const store = new EventStore(config.dataDir);
+const manager = new SessionManager(config, store);
+const hookServer = startHookServer(config.hookPort, config.hookSecret, (e) => manager.handleHook(e));
 
 const app = express();
 app.disable('x-powered-by');
@@ -123,6 +127,8 @@ attachWebSocket(server, { manager, auth, isAllowedHost });
 function shutdown(): void {
   manager.disposeAll();
   server.close();
+  hookServer.close();
+  store.close();
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

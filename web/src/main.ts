@@ -155,6 +155,9 @@ function onMessage(msg: ServerMessage): void {
         go({ view: 'dash' });
       }
       break;
+    case 'activity':
+      dashboard.activity(msg.activity);
+      break;
     case 'pong':
       break;
     default:

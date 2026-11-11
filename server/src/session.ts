@@ -20,6 +20,9 @@ export interface SessionOptions {
   /** Typed into the shell after spawn (e.g. `claude`). Empty = plain shell. */
   startupCommand: string;
   scrollback: number;
+  /** Where the hook script posts (CCC_HOOK_URL / CCC_HOOK_SECRET in the PTY env). */
+  hookUrl: string;
+  hookSecret: string;
 }
 
 const INITIAL_SIZE: TermSize = { cols: 120, rows: 30 };
@@ -50,8 +53,18 @@ export class Session {
   readonly cwd: string;
   readonly createdAt = Date.now();
   name: string;
-  state: SessionState = 'idle';
   exitCode: number | null = null;
+
+  // Claude state, driven by SessionManager from hooks.
+  state: SessionState = 'idle';
+  stateSince = Date.now();
+  /** Hook time of the event that set `state`; older (late, async) events cannot override it. */
+  stateT = 0;
+  activity: string | null = null;
+  activityT = 0;
+  model: string | null = null;
+  /** Server time of the last hook received. */
+  lastHookAt = 0;
   /** Browsers attached right now (kept by the WebSocket layer). */
   viewers = 0;
 
@@ -105,6 +118,9 @@ export class Session {
       name: this.name,
       cwd: this.cwd,
       state: this.state,
+      stateSince: this.stateSince,
+      activity: this.activity,
+      model: this.model,
       running: this.running,
       exitCode: this.exitCode,
       createdAt: this.createdAt,
@@ -125,6 +141,18 @@ export class Session {
       if (/[\p{L}\p{N}]/u.test(text)) lines.unshift(text.slice(0, PREVIEW_MAX_CHARS));
     }
     return lines;
+  }
+
+  /** Bottom `max` rows of the screen as plain text (alt screen included). */
+  screenTail(max: number): string {
+    if (this.disposed) return '';
+    const buf = this.term.buffer.active;
+    const bottom = buf.baseY + this.term.rows - 1;
+    const rows: string[] = [];
+    for (let y = Math.max(0, bottom - max + 1); y <= bottom; y++) {
+      rows.push(buf.getLine(y)?.translateToString(true) ?? '');
+    }
+    return rows.join('\n');
   }
 
   write(data: string): void {
@@ -196,6 +224,8 @@ export class Session {
     env.TERM = 'xterm-256color';
     env.COLORTERM = 'truecolor';
     env.CCC_SESSION_ID = this.id;
+    env.CCC_HOOK_URL = this.opts.hookUrl;
+    env.CCC_HOOK_SECRET = this.opts.hookSecret;
     return env;
   }
 
