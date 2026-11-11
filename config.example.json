@@ -1,0 +1,15 @@
+{
+  "host": "127.0.0.1",
+  "port": 7420,
+  "webDevPort": 5173,
+  "shell": "pwsh.exe",
+  "shellArgs": ["-NoLogo"],
+  "startupCommand": "claude",
+  "defaultCwd": "C:/Users/you/projects",
+  "favorites": [
+    { "name": "example", "path": "C:/Users/you/projects/example" }
+  ],
+  "token": "replace-with-a-long-random-token",
+  "hookSecret": "replace-with-another-long-random-secret",
+  "dataDir": "./data"
+}
