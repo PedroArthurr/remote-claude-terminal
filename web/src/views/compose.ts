@@ -1,4 +1,7 @@
-import { buzz, el, keepFocus } from '../dom';
+import { audio } from '../audio/engine';
+import { el, icon, keepFocus, toast } from '../dom';
+import { haptic } from '../fx/haptics';
+import { Dictation, type MicState } from '../mic';
 
 const DRAFT_PREFIX = 'ccc.draft.';
 const DRAFT_SAVE_MS = 300;
@@ -9,11 +12,20 @@ export class Compose {
   private readonly input: HTMLTextAreaElement;
   private readonly snips: HTMLElement;
   private readonly sendBtn: HTMLButtonElement;
+  readonly micBtn: HTMLButtonElement;
+  private readonly dictation: Dictation;
+  /** Box contents when dictation started; speech is appended to it. */
+  private micBase = '';
   private sessionId: string | null = null;
   private saveTimer = 0;
+  /** Dictation on/off (key bar mirrors it). */
+  onMic: ((on: boolean) => void) | null = null;
 
   /** `send` returns false when the text could not be delivered (kept in the box). */
-  constructor(private readonly send: (text: string) => boolean) {
+  constructor(
+    private readonly send: (text: string) => boolean,
+    private readonly onSent: (from: HTMLElement) => void = () => undefined,
+  ) {
     this.input = el('textarea', {
       class: 'compose-input',
       rows: 1,
@@ -26,10 +38,30 @@ export class Compose {
     this.sendBtn = keepFocus(
       el('button', { class: 'compose-send', type: 'button', title: 'Send (paste + Enter)', 'aria-label': 'Send' }, '➤'),
     );
+    this.micBtn = keepFocus(
+      el('button', { class: 'compose-mic', type: 'button', title: 'Dictate', 'aria-label': 'Dictate', 'aria-pressed': 'false' }, icon('mic')),
+    );
+    this.micBtn.hidden = !Dictation.supported;
+    this.dictation = new Dictation({
+      text: (final, interim) => this.setDictated(final, interim),
+      state: (st) => this.micState(st),
+      error: (msg) => {
+        toast(msg, 'bad');
+        haptic('blocked');
+        audio.play('fail');
+      },
+    });
+    this.micBtn.addEventListener('click', () => this.toggleMic());
     this.snips = el('div', { class: 'snips', role: 'group', 'aria-label': 'Snippets' });
-    this.root = el('div', { class: 'compose' }, this.snips, el('div', { class: 'compose-row' }, this.input, this.sendBtn));
+    this.root = el(
+      'div',
+      { class: 'compose' },
+      this.snips,
+      el('div', { class: 'compose-row' }, this.input, this.micBtn, this.sendBtn),
+    );
 
     this.input.addEventListener('input', () => {
+      this.dictation.stop(); // typing takes over
       this.autosize();
       clearTimeout(this.saveTimer);
       this.saveTimer = window.setTimeout(() => this.saveDraft(), DRAFT_SAVE_MS);
@@ -49,7 +81,10 @@ export class Compose {
         const label = text.length > 24 ? `${text.slice(0, 23)}…` : text;
         const b = keepFocus(el('button', { class: 'snip', type: 'button', title: text }, label));
         b.addEventListener('click', () => {
-          if (this.send(text)) this.flash(b);
+          if (this.send(text)) {
+            this.flash(b);
+            this.onSent(b);
+          }
         });
         return b;
       }),
@@ -59,6 +94,7 @@ export class Compose {
   /** Swap drafts when the terminal switches sessions. */
   setSession(id: string | null): void {
     if (id === this.sessionId) return;
+    this.dictation.stop();
     this.saveDraft();
     this.sessionId = id;
     this.input.value = id ? (localStorage.getItem(DRAFT_PREFIX + id) ?? '') : '';
@@ -73,14 +109,60 @@ export class Compose {
     return this.input;
   }
 
+  get dictating(): boolean {
+    return this.dictation.active;
+  }
+
+  toggleMic(): void {
+    if (!this.dictation.active) {
+      const v = this.input.value;
+      this.micBase = v && !/\s$/.test(v) ? `${v} ` : v;
+    }
+    this.dictation.toggle();
+  }
+
+  stopMic(): void {
+    this.dictation.stop();
+  }
+
+  private setDictated(final: string, interim: string): void {
+    const live = [final, interim].filter(Boolean).join(' ');
+    this.input.value = this.micBase + live;
+    this.input.classList.toggle('interim', !!interim);
+    this.autosize();
+    this.input.scrollTop = this.input.scrollHeight;
+    clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => this.saveDraft(), DRAFT_SAVE_MS);
+    if (interim) audio.play('type');
+  }
+
+  private micState(st: MicState): void {
+    const was = this.micBtn.dataset.mic ?? 'off';
+    this.micBtn.dataset.mic = st;
+    this.root.dataset.mic = st;
+    this.micBtn.setAttribute('aria-pressed', String(st !== 'off'));
+    this.onMic?.(st !== 'off');
+    if (was === 'off' && st !== 'off') {
+      audio.play('mic_on');
+      haptic('toggle');
+    } else if (was !== 'off' && st === 'off') {
+      audio.play('mic_off');
+      haptic('tap');
+      this.input.classList.remove('interim');
+    }
+  }
+
   private submit(): void {
     // Dictation often leaves trailing spaces; leading indentation is kept.
+    this.dictation.stop();
     const text = this.input.value.replace(/\s+$/, '');
     if (!this.send(text)) return;
     this.input.value = '';
     this.autosize();
     this.saveDraft();
     this.flash(this.sendBtn);
+    this.onSent(this.sendBtn);
+    this.onSent(this.sendBtn);
   }
 
   private saveDraft(): void {
@@ -97,8 +179,8 @@ export class Compose {
     this.input.style.height = `${this.input.scrollHeight + border}px`; // capped by max-height in CSS
   }
 
+  /** Visual only: sound and haptics come with onSent. */
   private flash(node: HTMLElement): void {
-    buzz(12);
     node.classList.remove('sent');
     void node.offsetWidth;
     node.classList.add('sent');
@@ -112,3 +194,4 @@ export function pruneDrafts(live: ReadonlySet<string>): void {
     if (key?.startsWith(DRAFT_PREFIX) && !live.has(key.slice(DRAFT_PREFIX.length))) localStorage.removeItem(key);
   }
 }
+

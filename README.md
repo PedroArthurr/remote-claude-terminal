@@ -140,6 +140,8 @@ Bottom of the terminal, always above the on-screen keyboard:
 
 - **Key bar:** `esc` `tab` `⇧tab` (Claude mode) `^C` arrows (hold to repeat) `1` `2` `3` `y` `n` `⏎`. Approving a permission = `1`/`2`/`3` or arrows + `⏎`.
 - **✎** toggles **Compose**: a multi-line box (keyboard voice dictation works) and `➤` sends it as a paste followed by Enter. Empty box + `➤` = Enter. `Ctrl+Enter` sends on desktop. Drafts are kept per session. Chips above the box are the `snippets` and send in one tap.
+- **Mic** (key bar and Compose) dictates into Compose with the Web Speech API (language in Look & sound; Chrome sends the audio to Google, like keyboard voice typing). Tap again, type, or send to stop; it also stops after a few seconds of silence. Needs HTTPS (option A).
+- Typing straight into the terminal is diffed against the keyboard's text on phones, so autocorrect, predictions and voice typing no longer repeat text.
 - **⌨** shows/hides the keyboard. In Terminal mode a tap on the screen also opens it; dragging only scrolls.
 - **A− / A+** in the header change the font size (remembered per device). The server resizes the PTY to match.
 
@@ -188,6 +190,8 @@ Performance: quality Low / Med / High caps frame rate (15/30/60 fps) and resolut
 | Service doesn't start | `npm run service -- status` and `logs/server.log`: config errors and crashes are logged there. `EADDRINUSE` = another server on the port; `missing server\dist` = run `npm run build`. |
 | Restored session shows a plain shell | `claude --resume` found no conversation (e.g. it never got a prompt): type `claude`. |
 | `npm install` fails on `node-pty` | Swap it for `@lydell/node-pty` (prebuilt) before installing Visual Studio Build Tools. |
+| Drops / `SIGNAL LOST` on the phone | The app pings every 5 s and reconnects within ~5 s of a dead link (2 s when you return to it). If it happens often: Android Settings → Apps → Tailscale (and Chrome) → Battery → *Unrestricted*; `tailscale ping <phone>` on the PC should say `via <LAN ip>`, not `via DERP`. The latency shows next to the dot when it is above 250 ms. |
+| Mic says *blocked* | Chrome → Site settings → the site → Microphone → Allow. Only works over HTTPS. |
 | No sound | Audio unlocks on the first tap; check the speaker icon and the phone's media volume. |
 
 ## Files

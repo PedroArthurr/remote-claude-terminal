@@ -1,6 +1,7 @@
 import type { TerminalMessage, TermSize } from '@ccc/shared';
 import type { Connection } from '../connection';
 import { el, toast } from '../dom';
+import { MobileInput } from '../ime';
 import { createTerminal, DEFAULT_FONT_SIZE, MAX_FONT_SIZE, MIN_FONT_SIZE } from '../terminal';
 import { currentTheme, type Theme } from '../themes';
 import { isKeyboardOpen } from '../viewport';
@@ -18,6 +19,23 @@ const MODE_KEY = 'ccc.inputMode';
 const FONT_KEY = 'ccc.fontSize';
 
 export type InputMode = 'term' | 'compose';
+
+type Point = { x: number; y: number };
+
+/** Hooks for sound/visual feedback (fx lives elsewhere). */
+export interface TermFeedback {
+  /** Printable text typed into the terminal; `at` = cursor on screen. */
+  typed(text: string, at: Point | null): void;
+  /** A line went out (Enter, Compose send, snippet). */
+  sent(from: HTMLElement | null, at: Point | null): void;
+  /** Input dropped: offline. */
+  blocked(): void;
+}
+
+const COARSE = matchMedia('(pointer: coarse)').matches;
+// Longer than this in one onData = paste, not typing.
+const TYPED_MAX = 8;
+const BLOCKED_GAP_MS = 1200;
 
 /** One xterm reused for whichever session is attached, plus the key bar and Compose box. */
 export class TerminalView {
@@ -37,10 +55,15 @@ export class TerminalView {
   private mode: InputMode = localStorage.getItem(MODE_KEY) === 'compose' ? 'compose' : 'term';
   private fontSize = clampFont(Number(localStorage.getItem(FONT_KEY)) || DEFAULT_FONT_SIZE);
   private fontScale = currentTheme().termFontScale;
+  private ime: MobileInput | null = null;
+  /** True while Compose writes to the PTY (it gives its own feedback). */
+  private quiet = false;
+  private blockedAt = -1e9;
 
   constructor(
     private readonly conn: Connection,
     private readonly onSize: (size: string) => void,
+    private readonly fb: TermFeedback,
   ) {
     this.host = el('div', { class: 'term' });
     this.exitText = el('div', { class: 'card-sub' });
@@ -55,13 +78,18 @@ export class TerminalView {
         el('button', { class: 'btn', onclick: () => this.restart() }, 'Restart ', el('kbd', {}, 'Enter')),
       ),
     );
-    this.compose = new Compose((text) => this.sendText(text));
+    this.compose = new Compose(
+      (text) => this.sendText(text),
+      (from) => this.fb.sent(from, null),
+    );
     this.keybar = new KeyBar({
       key: (data) => this.sendKey(data),
       appCursor: () => this.view.term.modes.applicationCursorKeysMode,
       toggleMode: () => this.setMode(this.mode === 'term' ? 'compose' : 'term', true),
       toggleKeyboard: () => this.toggleKeyboard(),
+      mic: () => this.toggleMic(),
     });
+    this.compose.onMic = (on) => this.keybar.setMic(on);
     this.screen = el('div', { class: 'screen' }, this.host, this.overlay);
     this.root = el(
       'div',
@@ -80,8 +108,18 @@ export class TerminalView {
         if (data === '\r') this.restart();
         return;
       }
-      this.conn.send({ type: 'input', data });
+      if (!this.conn.send({ type: 'input', data })) {
+        this.blocked();
+        return;
+      }
+      if (this.quiet) return;
+      if (data === '\r') this.fb.sent(null, this.cursorPos());
+      else if (data.length <= TYPED_MAX && !/[\x00-\x1f\x7f]/.test(data)) this.fb.typed(data, this.cursorPos());
     });
+    // Phones: own IME handling (xterm's duplicates text with Gboard autocorrect / voice typing).
+    if (COARSE && term.textarea) {
+      this.ime = new MobileInput(this.host, term.textarea, { send: (d) => term.input(d, true) });
+    }
     term.onResize(({ cols, rows }) => this.onSize(`${cols}×${rows}`));
     this.watchTaps();
     new ResizeObserver(() => {
@@ -110,6 +148,7 @@ export class TerminalView {
     this.lastSent = null;
     this.root.classList.add('loading');
     this.view.term.reset();
+    this.ime?.reset();
     this.compose.setSession(id);
     this.setRunning(true, null);
     this.conn.send({ type: 'attach', sessionId: id });
@@ -118,6 +157,7 @@ export class TerminalView {
   detach(): void {
     if (!this.sessionId) return;
     this.sessionId = null;
+    this.compose.stopMic();
     this.compose.setSession(null);
     this.view.term.blur();
     (document.activeElement as HTMLElement | null)?.blur?.();
@@ -194,6 +234,7 @@ export class TerminalView {
     if (!this.sessionId) return false;
     if (!this.conn.online) {
       toast('Offline — message kept', 'bad');
+      this.fb.blocked();
       return false;
     }
     if (!this.running) {
@@ -202,16 +243,54 @@ export class TerminalView {
     }
     const { term } = this.view;
     if (!text) {
-      term.input('\r', true);
+      this.quietly(() => term.input('\r', true));
       return true;
     }
     const id = this.sessionId;
-    term.paste(text);
+    this.quietly(() => term.paste(text));
     setTimeout(() => {
-      if (this.sessionId === id) term.input('\r', true);
+      if (this.sessionId === id) this.quietly(() => term.input('\r', true));
     }, PASTE_ENTER_DELAY_MS);
     return true;
   }
+
+  private quietly(fn: () => void): void {
+    this.quiet = true;
+    try {
+      fn();
+    } finally {
+      this.quiet = false;
+    }
+  }
+
+  /** Input dropped while offline: say so (throttled), never silently. */
+  private blocked(): void {
+    const now = performance.now();
+    if (now - this.blockedAt < BLOCKED_GAP_MS) return;
+    this.blockedAt = now;
+    this.fb.blocked();
+  }
+
+  /** Screen position of the cursor cell, if it is in view. */
+  private cursorPos(): Point | null {
+    const { term } = this.view;
+    const scr = this.host.querySelector('.xterm-screen');
+    if (!scr) return null;
+    const r = scr.getBoundingClientRect();
+    const b = term.buffer.active;
+    const row = b.baseY + b.cursorY - b.viewportY;
+    if (row < 0 || row >= term.rows || !r.width) return null;
+    const cw = r.width / term.cols;
+    const ch = r.height / term.rows;
+    return { x: r.left + (b.cursorX + 0.5) * cw, y: r.top + (row + 0.5) * ch };
+  }
+
+  /** Mic from the key bar: dictation lands in Compose, so switch there first. */
+  private toggleMic(): void {
+    if (this.mode !== 'compose') this.setMode('compose', false);
+    this.compose.toggleMic();
+  }
+
 
   private setMode(mode: InputMode, user: boolean): void {
     this.mode = mode;

@@ -4,7 +4,7 @@ import { PACKS, type SoundEvent } from './packs';
 import type { Voice } from './synth';
 
 // Same sound again within this window is dropped (a burst of tool calls must not machine-gun).
-const MIN_GAP_MS: Partial<Record<SoundEvent, number>> = { tool: 90, key: 25 };
+const MIN_GAP_MS: Partial<Record<SoundEvent, number>> = { tool: 90, key: 25, type: 30, toggle: 40, fail: 120 };
 const DEFAULT_GAP_MS = 150;
 const MASTER = 0.9;
 
@@ -48,6 +48,7 @@ class AudioEngine {
 
   play(ev: SoundEvent, variant?: string): void {
     if (prefs.get().muted || !this.voice || this.ctx?.state !== 'running') return;
+    if (ev === 'type' && !prefs.get().typing) return;
     const key = ev === 'tool' ? ev : `${ev}:${variant ?? ''}`;
     const now = performance.now();
     if (now - (this.last.get(key) ?? -1e9) < (MIN_GAP_MS[ev] ?? DEFAULT_GAP_MS)) return;

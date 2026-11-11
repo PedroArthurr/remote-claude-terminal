@@ -4,6 +4,7 @@ import { toast } from '../dom';
 import { prefs } from '../prefs';
 import type { Theme } from '../themes/types';
 import type { Background } from './background';
+import { haptic } from './haptics';
 import type { Particles } from './particles';
 
 export interface DirectorDeps {
@@ -19,15 +20,21 @@ export interface DirectorDeps {
 }
 
 /** Kinds the settings preview can fire. */
-export type PreviewKind = 'prompt' | 'tool' | 'permission' | 'done' | 'error';
+export type PreviewKind = 'prompt' | 'tool' | 'permission' | 'done' | 'error' | 'subagent_start' | 'compact' | 'interrupted';
 
-const HAPTICS: Partial<Record<ActivityKind, number[]>> = {
-  permission: [90, 60, 90, 60, 90],
-  done: [30, 50, 120],
-  error: [220],
-};
 // PermissionRequest and the permission Notification both arrive for one dialog: one effect.
-const DEDUPE_MS: Partial<Record<ActivityKind, number>> = { permission: 4000, done: 1500, error: 1500 };
+const DEDUPE_MS: Partial<Record<ActivityKind, number>> = {
+  permission: 4000,
+  done: 1500,
+  error: 1500,
+  permission_denied: 1500,
+  interrupted: 1500,
+  compact: 3000,
+};
+/** Blips shorter than this stay quiet (reconnects are usually instant). */
+const OFFLINE_ANNOUNCE_MS = 1500;
+// Chance a typed char throws sparks, by quality (keeps long dictation from flooding).
+const TYPE_SPARK_CHANCE = { low: 0, medium: 0.5, high: 1 } as const;
 
 interface Anchor {
   x: number;
@@ -41,11 +48,87 @@ interface Anchor {
 export class FxDirector {
   private theme: Theme | null = null;
   private recent = new Map<string, number>();
+  private offlineTimer = 0;
+  private lostShown = false;
+  private wasOnline = false;
 
   constructor(private readonly d: DirectorDeps) {}
 
   setTheme(t: Theme): void {
     this.theme = t;
+  }
+
+  // ── UI feedback ──────────────────────────────────────
+
+  /** Typing in the terminal: tick + a few sparks at the cursor. */
+  typed(at: { x: number; y: number } | null): void {
+    if (!prefs.get().typing) return;
+    audio.play('type');
+    const t = this.theme;
+    const q = prefs.get().quality;
+    if (!t || !at || Math.random() >= TYPE_SPARK_CHANCE[q]) return;
+    this.d.particles.sparks(at.x, at.y, t.vars['--accent'] ?? t.palette[0]!, 3, t.burst === 'pixels');
+  }
+
+  /** A line went out: whoosh, ring at the source, sweep up the terminal. */
+  sent(from: HTMLElement | null, at: { x: number; y: number } | null): void {
+    audio.play('send');
+    haptic('send');
+    const t = this.theme;
+    if (!t) return;
+    const color = t.vars['--accent'] ?? t.palette[0]!;
+    const p = from ? center(from) : at;
+    if (p) {
+      this.d.particles.ring(p.x, p.y, color, from ? 46 : 70, 0.8);
+      this.d.particles.sparks(p.x, p.y, color, from ? 8 : 5, t.burst === 'pixels');
+    }
+    if (this.d.view() === 'term' && !prefs.get().reduce) retrigger(this.d.screen, 'fx-send');
+  }
+
+  /** Input dropped (offline). */
+  blocked(): void {
+    audio.play('fail');
+    haptic('blocked');
+    retrigger(document.querySelector<HTMLElement>('.status') ?? document.body, 'fx-attn');
+  }
+
+  /** Link lost / back. Only announced when the outage is long enough to notice. */
+  connection(state: 'connecting' | 'online' | 'offline'): void {
+    const root = document.documentElement;
+    if (state === 'online') {
+      clearTimeout(this.offlineTimer);
+      this.offlineTimer = 0;
+      if (this.lostShown) {
+        this.lostShown = false;
+        root.classList.remove('link-lost');
+        audio.play('online');
+        haptic('online');
+        if (!prefs.get().reduce) retrigger(document.body, 'fx-relink');
+      }
+      this.wasOnline = true;
+      return;
+    }
+    if (!this.wasOnline || this.offlineTimer || this.lostShown) return;
+    this.offlineTimer = window.setTimeout(() => {
+      this.offlineTimer = 0;
+      this.lostShown = true;
+      root.classList.add('link-lost');
+      audio.play('offline');
+      haptic('offline');
+    }, OFFLINE_ANNOUNCE_MS);
+  }
+
+  /** Screen change. */
+  nav(to: 'term' | 'dash'): void {
+    audio.play(to === 'term' ? 'nav' : 'back');
+    haptic('nav');
+    if (to === 'term' && !prefs.get().reduce) retrigger(this.d.screen, 'fx-power');
+  }
+
+  /** Small button feedback (toggles in the header / sheets). */
+  toggle(): void {
+    audio.play('toggle');
+    haptic('toggle');
   }
 
   sessions(list: SessionInfo[]): void {
@@ -106,6 +189,42 @@ export class FxDirector {
         break;
       case 'permission_answered':
         audio.play('ack');
+        haptic('tap');
+        if (at) this.d.particles.ring(at.x, at.y, vars['--done'] ?? pal[0]!, at.on === 'card' ? 50 : 120, 0.6);
+        break;
+      case 'permission_denied':
+        audio.play('denied');
+        haptic('denied');
+        if (at) {
+          this.d.particles.ring(at.x, at.y, vars['--bad'] ?? pal[0]!, at.on === 'card' ? 50 : 120, 0.7);
+          retrigger(at.el, 'fx-attn');
+        }
+        break;
+      case 'tool_failed':
+        audio.play('fail');
+        if (at) this.d.particles.sparks(at.x, at.y, vars['--bad'] ?? pal[0]!, 6, t.burst === 'pixels');
+        break;
+      case 'subagent_start':
+        audio.play('subagent');
+        haptic('subagent');
+        if (at) {
+          this.d.particles.ring(at.x, at.y, toolColor(pal, 'agent'), at.on === 'card' ? 40 : 110, 0.6);
+          this.d.particles.sparks(at.x, at.y, toolColor(pal, 'agent'), 12, t.burst === 'pixels');
+        }
+        break;
+      case 'subagent_stop':
+        audio.play('subagent_done');
+        if (at) this.d.particles.ring(at.x, at.y, toolColor(pal, 'agent'), at.on === 'card' ? 30 : 80, 0.5);
+        break;
+      case 'compact':
+        audio.play('compact');
+        haptic('compact');
+        if (at && !prefs.get().reduce) retrigger(at.el, 'fx-compact');
+        break;
+      case 'interrupted':
+        audio.play('interrupt');
+        haptic('interrupt');
+        if (at && !prefs.get().reduce) retrigger(at.el, 'fx-dim');
         break;
       case 'done':
         audio.play('done');
@@ -158,15 +277,14 @@ export class FxDirector {
     retrigger(screen, 'fx-scan');
   }
 
-  private haptic(kind: ActivityKind): void {
-    const pattern = HAPTICS[kind];
-    if (!pattern || !prefs.get().haptics) return;
-    try {
-      navigator.vibrate?.(pattern);
-    } catch {
-      // Needs a prior user gesture; harmless.
-    }
+  private haptic(kind: 'permission' | 'done' | 'error'): void {
+    haptic(kind);
   }
+}
+
+function center(el: HTMLElement): { x: number; y: number } {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
 
 function toolColor(pal: string[], c: ToolCategory | undefined): string {

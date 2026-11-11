@@ -29,6 +29,9 @@ const title = el('span', { class: 'title' });
 const chip = el('span', { class: 'chip' });
 const size = el('span', { class: 'meta' });
 const connText = el('span', {}, 'connecting');
+// Latency: only shown when it is bad enough to explain lag.
+const rttText = el('span', { class: 'rtt' });
+const SLOW_RTT_MS = 250;
 const zoom = el(
   'span',
   { class: 'zoom' },
@@ -36,16 +39,29 @@ const zoom = el(
   keepFocus(el('button', { class: 'icon-btn', title: 'Larger text', 'aria-label': 'Larger text', onclick: () => terminal.zoom(1) }, 'A+')),
 );
 const muteBtn = keepFocus(
-  el('button', { class: 'icon-btn', onclick: () => prefs.set({ muted: !prefs.get().muted }) }),
+  el('button', { class: 'icon-btn', onclick: () => {
+      prefs.set({ muted: !prefs.get().muted });
+      fx.toggle();
+    } }),
 );
 const settingsBtn = keepFocus(
-  el('button', { class: 'icon-btn', title: 'Look & sound', 'aria-label': 'Look & sound', onclick: () => settings.open() }, icon('sliders')),
+  el('button', { class: 'icon-btn', title: 'Look & sound', 'aria-label': 'Look & sound', onclick: () => {
+      fx.toggle();
+      settings.open();
+    } }, icon('sliders')),
 );
 const back = el('button', { class: 'back', 'aria-label': 'Back to sessions', onclick: () => go({ view: 'dash' }) }, '‹');
 
-const conn = new Connection({ onMessage, onState });
+const conn = new Connection({ onMessage, onState, onRtt });
 const dashboard = new Dashboard((id) => go({ view: 'term', id }));
-const terminal = new TerminalView(conn, (s) => (size.textContent = s));
+const terminal = new TerminalView(conn, (s) => (size.textContent = s), {
+  typed: (_text, at) => fx.typed(at),
+  sent: (from, at) => fx.sent(from, at),
+  blocked: () => {
+    fx.blocked();
+    toast('Offline — reconnecting…', 'bad');
+  },
+});
 const login = new LoginView(() => void start());
 const background = new Background(document.querySelector<HTMLCanvasElement>('#fx-bg')!);
 const particles = new Particles(document.querySelector<HTMLCanvasElement>('#fx-top')!);
@@ -82,7 +98,7 @@ app.append(
     size,
     muteBtn,
     settingsBtn,
-    el('span', { class: 'status' }, el('i', { class: 'dot' }), connText),
+    el('span', { class: 'status' }, rttText, el('i', { class: 'dot' }), connText),
   ),
   el(
     'main',
@@ -161,12 +177,15 @@ function go(r: Route): void {
 function route(): void {
   if (app.dataset.view === 'login') return;
   const r = parseRoute();
+  const prev = app.dataset.view;
   if (r.view === 'term') {
+    if (prev === 'dash') fx.nav('term');
     terminal.attach(r.id);
     setView('term');
     updateTitle();
   } else {
     pushed = false;
+    if (prev === 'term') fx.nav('dash');
     terminal.detach();
     setView('dash');
     title.textContent = '';
@@ -260,6 +279,11 @@ let authCheck: Promise<void> | null = null;
 function onState(state: ConnState): void {
   app.dataset.conn = state;
   connText.textContent = state;
+  fx.connection(state);
+  if (state !== 'online') {
+    rttText.textContent = '';
+    delete app.dataset.slow;
+  }
   if (state === 'online') terminal.reattach();
   // A socket that keeps failing may mean the cookie is gone (token rotated).
   if (state === 'offline' && app.dataset.view !== 'login' && !authCheck) {
@@ -271,4 +295,12 @@ function onState(state: ConnState): void {
       .catch(() => undefined)
       .finally(() => (authCheck = null));
   }
+}
+
+function onRtt(ms: number): void {
+  const slow = ms >= SLOW_RTT_MS;
+  rttText.textContent = slow ? `${ms}ms` : '';
+  rttText.title = `Round trip ${ms} ms`;
+  if (slow) app.dataset.slow = '';
+  else delete app.dataset.slow;
 }

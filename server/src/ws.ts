@@ -6,7 +6,7 @@ import { hostnameOf, requestHostname } from './net';
 import type { Session } from './session';
 import type { SessionManager } from './sessions';
 
-const HEARTBEAT_MS = 30_000;
+const HEARTBEAT_MS = 20_000;
 // A client this far behind is dropped; it resyncs from a fresh snapshot when it reconnects.
 const MAX_BUFFERED_BYTES = 8 * 1024 * 1024;
 const MAX_DIM = 1000;
@@ -27,7 +27,12 @@ export interface WsDeps {
 }
 
 export function attachWebSocket(server: Server, { manager, auth, isAllowedHost }: WsDeps): void {
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+  // Deflate: terminal output and snapshots shrink a lot, which matters on a weak mobile link.
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: 1024 * 1024,
+    perMessageDeflate: { threshold: 512, zlibDeflateOptions: { level: 3 } },
+  });
   const clients = new Set<Client>();
 
   manager.onChange((sessions) => {

@@ -552,3 +552,291 @@ html[data-fx='reduced'] .fx-attn {
     display: none;
   }
 }
+
+/* ── feedback: send, nav, compact, interrupt ────────── */
+
+/* line sent: glow rises from the bottom edge */
+.screen.fx-send {
+  animation: send-glow 520ms var(--ease-out);
+}
+
+@keyframes send-glow {
+  from {
+    box-shadow: inset 0 -40px 50px -30px rgb(var(--accent-rgb) / 0.55);
+  }
+  to {
+    box-shadow: inset 0 -200px 80px -200px rgb(var(--accent-rgb) / 0);
+  }
+}
+
+/* opening a session: tube powers on */
+.screen.fx-power {
+  animation: power-on 420ms var(--ease-out);
+  transform-origin: 50% 40%;
+}
+
+@keyframes power-on {
+  from {
+    transform: scaleY(0.02) scaleX(0.6);
+    filter: brightness(3) saturate(0);
+    opacity: 0.6;
+  }
+  45% {
+    transform: scaleY(1.02) scaleX(1);
+    filter: brightness(1.6);
+    opacity: 1;
+  }
+  to {
+    transform: none;
+    filter: none;
+  }
+}
+
+html:not([data-theme='crt']) .screen.fx-power {
+  animation-name: power-fade;
+  animation-duration: 300ms;
+}
+
+@keyframes power-fade {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+    filter: blur(3px);
+  }
+}
+
+/* context compacted: squeeze and spring back */
+.fx-compact {
+  animation: compact 700ms var(--ease-spring);
+  transform-origin: 50% 0;
+}
+
+@keyframes compact {
+  35% {
+    transform: scaleY(0.82);
+    filter: brightness(1.4) hue-rotate(30deg);
+  }
+}
+
+/* interrupted: brief power sag */
+.fx-dim {
+  animation: dim 600ms ease-out;
+}
+
+@keyframes dim {
+  15% {
+    filter: brightness(0.35) saturate(0.3);
+  }
+}
+
+/* ── link lost / back ───────────────────────────────── */
+
+html.link-lost #app::after {
+  content: 'SIGNAL LOST — reconnecting';
+  position: fixed;
+  left: 50%;
+  top: calc(env(safe-area-inset-top) + 3.6rem);
+  z-index: 25;
+  transform: translateX(-50%);
+  padding: 0.35rem 0.8rem;
+  border: 1px solid rgb(var(--bad-rgb) / 0.6);
+  border-radius: var(--radius-pill);
+  background: rgb(var(--bg-rgb) / 0.88);
+  color: var(--bad);
+  font-family: var(--font-display);
+  font-size: calc(0.7rem * var(--display-size));
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  box-shadow: 0 0 calc(18px * var(--glow)) rgb(var(--bad-rgb) / 0.4);
+  pointer-events: none;
+  animation:
+    lost-in 260ms var(--ease-out),
+    blink-soft 1.4s ease-in-out 260ms infinite;
+}
+
+html.link-lost .screen {
+  filter: saturate(0.15) brightness(0.7);
+  transition: filter 400ms ease;
+}
+
+html.link-lost:not([data-fx='reduced']) .screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 0.035) 0 1px, transparent 1px 4px);
+  animation: static-roll 0.9s steps(6) infinite;
+}
+
+@keyframes lost-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+}
+
+@keyframes blink-soft {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes static-roll {
+  to {
+    background-position: 0 12px;
+  }
+}
+
+body.fx-relink {
+  animation: relink 520ms var(--ease-out);
+}
+
+@keyframes relink {
+  from {
+    box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 60px rgb(var(--accent-rgb) / 0.35);
+  }
+}
+
+/* slow link: dot turns amber, latency shown */
+.rtt {
+  color: var(--warn);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rtt:empty {
+  display: none;
+}
+
+#app[data-conn='online'][data-slow] .dot {
+  background: var(--warn);
+  box-shadow: 0 0 10px var(--warn);
+}
+
+@media (max-width: 30rem) {
+  .status .rtt {
+    display: inline;
+  }
+
+  .status .rtt:empty {
+    display: none;
+  }
+}
+
+/* ── dictation ──────────────────────────────────────── */
+
+.compose-mic {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 140ms var(--ease-out);
+}
+
+.compose-mic:active {
+  transform: scale(0.93);
+}
+
+.compose-mic[data-mic='listening'],
+.compose-mic[data-mic='hearing'],
+.k-mic.on {
+  border-color: var(--bad);
+  background: rgb(var(--bad-rgb) / 0.14);
+  color: var(--bad);
+}
+
+.compose-mic[data-mic='listening']::after,
+.compose-mic[data-mic='hearing']::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: mic-ring 1.3s ease-out infinite;
+}
+
+.compose-mic[data-mic='hearing']::after {
+  animation-duration: 0.6s;
+}
+
+@keyframes mic-ring {
+  from {
+    box-shadow: 0 0 0 0 rgb(var(--bad-rgb) / 0.55);
+  }
+  to {
+    box-shadow: 0 0 0 12px rgb(var(--bad-rgb) / 0);
+  }
+}
+
+.compose[data-mic='listening'] .compose-input,
+.compose[data-mic='hearing'] .compose-input {
+  border-color: rgb(var(--bad-rgb) / 0.6);
+  box-shadow: 0 0 0 3px rgb(var(--bad-rgb) / 0.12);
+}
+
+.compose-input.interim {
+  caret-color: transparent;
+}
+
+.compose-mic .ico,
+.k-mic .ico {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+/* key bar: second row has the mic too (9 keys under 8) */
+@media (max-width: 47.99rem) {
+  .keybar {
+    grid-template-columns: repeat(72, minmax(0, 1fr));
+  }
+
+  .keybar > .k {
+    grid-column: span 9;
+  }
+
+  .keybar > .k.k-r2 {
+    grid-column: span 8;
+  }
+
+  .keybar.no-mic > .k.k-r2 {
+    grid-column: span 9;
+  }
+}
+
+@media (max-width: 47.99rem) and (pointer: fine) {
+  /* no keyboard toggle on desktop: 8 per row again */
+  .keybar:not(.no-mic) > .k.k-r2 {
+    grid-column: span 9;
+  }
+}
+
+html[data-fx='reduced'] .compose-mic::after,
+html[data-fx='reduced'] #app::after {
+  animation: none !important;
+}
+
+.k[hidden],
+.compose-mic[hidden] {
+  display: none;
+}

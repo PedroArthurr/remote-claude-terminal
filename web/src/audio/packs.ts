@@ -2,7 +2,30 @@ import type { ToolCategory } from '@ccc/shared';
 import type { SoundPackId } from '../themes/types';
 import { noise, semis, tone, type Voice } from './synth';
 
-export type SoundEvent = 'key' | 'prompt' | 'tool' | 'permission' | 'done' | 'error' | 'ack' | 'theme';
+export type SoundEvent =
+  | 'key'
+  | 'type'
+  | 'send'
+  | 'nav'
+  | 'back'
+  | 'toggle'
+  | 'prompt'
+  | 'tool'
+  | 'fail'
+  | 'permission'
+  | 'denied'
+  | 'subagent'
+  | 'subagent_done'
+  | 'compact'
+  | 'interrupt'
+  | 'done'
+  | 'error'
+  | 'ack'
+  | 'theme'
+  | 'offline'
+  | 'online'
+  | 'mic_on'
+  | 'mic_off';
 
 export type Pack = Record<SoundEvent, (v: Voice, variant?: string) => void>;
 
@@ -22,6 +45,43 @@ const step = (variant?: string) => TOOL_STEP[variant as ToolCategory] ?? 0;
 /** 8-bit: square and triangle waves, snappy arpeggios. */
 const chip: Pack = {
   key: (v) => tone(v, { type: 'square', f: 1250, dur: 0.012, gain: 0.025 }),
+  type: (v) => tone(v, { type: 'square', f: semis(1500, Math.floor(Math.random() * 5)), dur: 0.008, gain: 0.014 }),
+  send: (v) => {
+    [523, 784, 1047].forEach((f, i) => tone(v, { type: 'square', f, at: i * 0.035, dur: 0.05, gain: 0.05 }));
+  },
+  nav: (v) => tone(v, { type: 'square', f: 660, f2: 1320, dur: 0.07, gain: 0.04 }),
+  back: (v) => tone(v, { type: 'square', f: 1320, f2: 660, dur: 0.07, gain: 0.035 }),
+  toggle: (v) => tone(v, { type: 'triangle', f: 1568, dur: 0.03, gain: 0.05 }),
+  fail: (v) => tone(v, { type: 'square', f: 196, dur: 0.06, gain: 0.04 }),
+  denied: (v) => {
+    tone(v, { type: 'square', f: 392, dur: 0.07, gain: 0.06 });
+    tone(v, { type: 'square', f: 262, at: 0.08, dur: 0.12, gain: 0.06 });
+  },
+  subagent: (v) => {
+    [784, 988, 1175].forEach((f, i) => tone(v, { type: 'triangle', f, at: i * 0.03, dur: 0.05, gain: 0.05 }));
+  },
+  subagent_done: (v) => {
+    tone(v, { type: 'triangle', f: 1175, dur: 0.05, gain: 0.05 });
+    tone(v, { type: 'triangle', f: 1568, at: 0.05, dur: 0.08, gain: 0.05 });
+  },
+  compact: (v) => {
+    [1568, 1319, 1047, 784, 523].forEach((f, i) => tone(v, { type: 'square', f, at: i * 0.04, dur: 0.04, gain: 0.04 }));
+  },
+  interrupt: (v) => tone(v, { type: 'square', f: 880, f2: 110, dur: 0.22, gain: 0.06 }),
+  offline: (v) => {
+    [523, 392, 262].forEach((f, i) => tone(v, { type: 'square', f, at: i * 0.12, dur: i === 2 ? 0.2 : 0.1, gain: 0.06 }));
+  },
+  online: (v) => {
+    [262, 392, 523, 784].forEach((f, i) => tone(v, { type: 'square', f, at: i * 0.05, dur: 0.07, gain: 0.05 }));
+  },
+  mic_on: (v) => {
+    tone(v, { type: 'square', f: 880, dur: 0.04, gain: 0.05 });
+    tone(v, { type: 'square', f: 1760, at: 0.05, dur: 0.06, gain: 0.05 });
+  },
+  mic_off: (v) => {
+    tone(v, { type: 'square', f: 1760, dur: 0.04, gain: 0.05 });
+    tone(v, { type: 'square', f: 880, at: 0.05, dur: 0.06, gain: 0.05 });
+  },
   prompt: (v) => {
     tone(v, { type: 'square', f: 659, dur: 0.05, gain: 0.07 });
     tone(v, { type: 'square', f: 988, at: 0.055, dur: 0.07, gain: 0.07 });
@@ -59,6 +119,37 @@ const chip: Pack = {
 /** Futuristic: sine pings, filtered saws, sweeps, echo. */
 const synth: Pack = {
   key: (v) => tone(v, { f: 2400, dur: 0.02, gain: 0.02 }),
+  type: (v) => tone(v, { f: semis(2600, Math.floor(Math.random() * 4)), dur: 0.015, gain: 0.012 }),
+  send: (v) => {
+    tone(v, { f: 330, f2: 1980, attack: 0.01, dur: 0.18, gain: 0.05, send: 0.35 });
+    noise(v, { dur: 0.16, gain: 0.03, filter: { type: 'bandpass', f: 800, f2: 6000, q: 3 } });
+  },
+  nav: (v) => tone(v, { f: 880, f2: 1760, dur: 0.1, gain: 0.03, send: 0.3 }),
+  back: (v) => tone(v, { f: 1760, f2: 880, dur: 0.1, gain: 0.025, send: 0.3 }),
+  toggle: (v) => tone(v, { f: 3200, dur: 0.025, gain: 0.025 }),
+  fail: (v) => tone(v, { type: 'sawtooth', f: 180, dur: 0.08, gain: 0.03, filter: { type: 'lowpass', f: 900, q: 6 } }),
+  denied: (v) =>
+    tone(v, { type: 'sawtooth', f: 330, f2: 165, dur: 0.22, gain: 0.04, filter: { type: 'lowpass', f: 1400, q: 8 } }),
+  subagent: (v) => {
+    tone(v, { f: 1320, dur: 0.12, gain: 0.03, send: 0.5 });
+    tone(v, { f: 1980, at: 0.06, dur: 0.12, gain: 0.025, send: 0.5 });
+  },
+  subagent_done: (v) => tone(v, { f: 2640, dur: 0.16, gain: 0.025, send: 0.5 }),
+  compact: (v) => {
+    tone(v, { type: 'sawtooth', f: 1760, f2: 110, dur: 0.4, gain: 0.03, filter: { type: 'lowpass', f: 4000, f2: 300, q: 6 } });
+    noise(v, { dur: 0.3, gain: 0.025, filter: { type: 'bandpass', f: 5000, f2: 400, q: 2 } });
+  },
+  interrupt: (v) =>
+    tone(v, { type: 'sawtooth', f: 660, f2: 80, dur: 0.3, gain: 0.04, filter: { type: 'lowpass', f: 2000, q: 4 } }),
+  offline: (v) => {
+    tone(v, { type: 'sawtooth', f: 440, f2: 110, attack: 0.02, dur: 0.6, gain: 0.04, filter: { type: 'lowpass', f: 2500, f2: 200, q: 5 } });
+    noise(v, { attack: 0.1, dur: 0.5, gain: 0.03, filter: { type: 'lowpass', f: 1500, f2: 200 } });
+  },
+  online: (v) => {
+    [440, 660, 880, 1320].forEach((f, i) => tone(v, { f, at: i * 0.05, dur: 0.3, gain: 0.03, send: 0.4 }));
+  },
+  mic_on: (v) => tone(v, { f: 660, f2: 1320, attack: 0.01, dur: 0.14, gain: 0.04, send: 0.3 }),
+  mic_off: (v) => tone(v, { f: 1320, f2: 660, attack: 0.01, dur: 0.14, gain: 0.035, send: 0.3 }),
   prompt: (v) => {
     tone(v, { f: 220, f2: 880, attack: 0.02, dur: 0.26, gain: 0.07, send: 0.3 });
     noise(v, { attack: 0.05, dur: 0.22, gain: 0.035, filter: { type: 'bandpass', f: 500, f2: 4000, q: 2 } });
@@ -118,6 +209,51 @@ const synth: Pack = {
 /** Ambient / analog: relay clicks, soft thumps, bells, warm pads, hum. */
 const ambient: Pack = {
   key: (v) => noise(v, { dur: 0.006, gain: 0.05, filter: { type: 'bandpass', f: 3200, q: 3 } }),
+  type: (v) => noise(v, { dur: 0.004, gain: 0.035, filter: { type: 'bandpass', f: 2600 + Math.random() * 1600, q: 4 } }),
+  send: (v) => {
+    noise(v, { dur: 0.01, gain: 0.09, filter: { type: 'bandpass', f: 1800, q: 2 } });
+    noise(v, { at: 0.02, attack: 0.04, dur: 0.18, gain: 0.03, filter: { type: 'bandpass', f: 600, f2: 3000, q: 1.5 } });
+    tone(v, { f: 98, f2: 60, dur: 0.15, gain: 0.08 });
+  },
+  nav: (v) => noise(v, { dur: 0.012, gain: 0.07, filter: { type: 'bandpass', f: 1500, q: 2 } }),
+  back: (v) => noise(v, { dur: 0.012, gain: 0.06, filter: { type: 'bandpass', f: 1100, q: 2 } }),
+  toggle: (v) => {
+    noise(v, { dur: 0.006, gain: 0.08, filter: { type: 'bandpass', f: 2800, q: 3 } });
+    noise(v, { at: 0.04, dur: 0.005, gain: 0.05, filter: { type: 'bandpass', f: 2000, q: 3 } });
+  },
+  fail: (v) => tone(v, { f: 110, dur: 0.08, gain: 0.05 }),
+  denied: (v) => {
+    tone(v, { f: 220, dur: 0.25, gain: 0.04 });
+    tone(v, { f: 208, dur: 0.25, gain: 0.04 });
+  },
+  subagent: (v) => tone(v, { f: 1319, dur: 0.5, gain: 0.02, send: 0.4 }),
+  subagent_done: (v) => tone(v, { f: 1760, dur: 0.6, gain: 0.018, send: 0.4 }),
+  compact: (v) => {
+    noise(v, { attack: 0.05, dur: 0.35, gain: 0.05, filter: { type: 'lowpass', f: 3000, f2: 150 } });
+    tone(v, { f: 80, f2: 45, at: 0.3, dur: 0.2, gain: 0.1 });
+  },
+  interrupt: (v) => {
+    tone(v, { f: 120, f2: 40, dur: 0.3, gain: 0.1 });
+    noise(v, { dur: 0.05, gain: 0.06, filter: { type: 'highpass', f: 3000 } });
+  },
+  offline: (v) => {
+    // Power-down: whine falls away, hum fades.
+    tone(v, { f: 1400, f2: 120, dur: 0.6, gain: 0.015 });
+    tone(v, { f: 60, hold: 0.2, dur: 0.5, gain: 0.08 });
+  },
+  online: (v) => {
+    tone(v, { f: 60, f2: 45, dur: 0.25, gain: 0.1 });
+    tone(v, { f: 300, f2: 1400, attack: 0.1, dur: 0.35, gain: 0.012 });
+    tone(v, { f: 880, at: 0.2, dur: 0.8, gain: 0.03, send: 0.3 });
+  },
+  mic_on: (v) => {
+    noise(v, { dur: 0.01, gain: 0.08, filter: { type: 'bandpass', f: 2200, q: 2 } });
+    tone(v, { f: 880, at: 0.02, dur: 0.25, gain: 0.03 });
+  },
+  mic_off: (v) => {
+    noise(v, { dur: 0.01, gain: 0.07, filter: { type: 'bandpass', f: 1600, q: 2 } });
+    tone(v, { f: 587, at: 0.02, dur: 0.25, gain: 0.03 });
+  },
   prompt: (v) => {
     noise(v, { dur: 0.012, gain: 0.1, filter: { type: 'bandpass', f: 2200, q: 2 } });
     tone(v, { f: 130, f2: 60, dur: 0.2, gain: 0.12 });

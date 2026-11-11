@@ -1,5 +1,7 @@
 import { audio } from '../audio/engine';
-import { buzz, el, keepFocus } from '../dom';
+import { el, icon, keepFocus } from '../dom';
+import { haptic } from '../fx/haptics';
+import { Dictation } from '../mic';
 
 const REPEAT_DELAY_MS = 380;
 const REPEAT_MS = 70;
@@ -11,6 +13,8 @@ export interface KeyBarHandlers {
   appCursor(): boolean;
   toggleMode(): void;
   toggleKeyboard(): void;
+  /** Start/stop dictation (switches to Compose). */
+  mic(): void;
 }
 
 interface KeyDef {
@@ -47,12 +51,17 @@ export class KeyBar {
   readonly root: HTMLElement;
   private readonly modeBtn: HTMLButtonElement;
   private readonly kbBtn: HTMLButtonElement;
+  private readonly micBtn: HTMLButtonElement;
 
   constructor(h: KeyBarHandlers) {
     this.modeBtn = this.button('✎', 'Compose mode', 'k-tool k-mode');
     this.kbBtn = this.button('⌨', 'Show/hide keyboard', 'k-tool k-kb');
     press(this.modeBtn, () => h.toggleMode(), false, true);
     press(this.kbBtn, () => h.toggleKeyboard(), false, true);
+    this.micBtn = this.button('', 'Dictate', 'k-tool k-mic');
+    this.micBtn.replaceChildren(icon('mic'));
+    this.micBtn.hidden = !Dictation.supported;
+    press(this.micBtn, () => h.mic(), false, true);
 
     const keys = [...KEYS, ...KEYS_2].map((k) => {
       const b = this.button(k.label, k.title, k.cls);
@@ -60,13 +69,21 @@ export class KeyBar {
       press(b, fire, !!k.arrow);
       return b;
     });
-    keys.splice(KEYS.length, 0, this.modeBtn, this.kbBtn);
+    keys.splice(KEYS.length, 0, this.modeBtn, this.kbBtn, this.micBtn);
+    // Second row: one more key than the first (see .k-r2 in CSS).
+    for (const b of keys.slice(KEYS.length)) b.classList.add('k-r2');
     this.root = el('div', { class: 'keybar', role: 'toolbar', 'aria-label': 'Terminal keys' }, ...keys);
+    this.root.classList.toggle('no-mic', !Dictation.supported);
   }
 
   setMode(compose: boolean): void {
     this.modeBtn.classList.toggle('on', compose);
     this.modeBtn.setAttribute('aria-pressed', String(compose));
+  }
+
+  setMic(on: boolean): void {
+    this.micBtn.classList.toggle('on', on);
+    this.micBtn.setAttribute('aria-pressed', String(on));
   }
 
   setKeyboard(open: boolean): void {
@@ -100,8 +117,8 @@ function press(btn: HTMLButtonElement, fire: () => void, repeat: boolean, onRele
     e.preventDefault();
     down = true;
     btn.classList.add('down');
-    buzz();
-    audio.play('key');
+    haptic('key');
+    audio.play(onRelease ? 'toggle' : 'key');
     if (onRelease) return;
     fire();
     if (repeat) delay = window.setTimeout(() => (interval = window.setInterval(fire, REPEAT_MS)), REPEAT_DELAY_MS);

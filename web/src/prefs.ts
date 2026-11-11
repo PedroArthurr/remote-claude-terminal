@@ -12,6 +12,10 @@ export interface Prefs {
   /** No animated background, particles, glitch or sweeps. State colors and sounds stay. */
   reduce: boolean;
   haptics: boolean;
+  /** Click + sparks while typing in the terminal. */
+  typing: boolean;
+  /** Speech recognition language (BCP 47). */
+  micLang: string;
 }
 
 const KEY = 'ccc.prefs';
@@ -24,6 +28,8 @@ const DEFAULTS: Prefs = {
   quality: COARSE ? 'medium' : 'high',
   reduce: matchMedia('(prefers-reduced-motion: reduce)').matches,
   haptics: true,
+  typing: true,
+  micLang: navigator.language || 'pt-BR',
 };
 
 const THEMES: ThemeId[] = ['neon', 'crt', 'pixel'];
@@ -39,6 +45,8 @@ function load(): Prefs {
       quality: QUALITIES.includes(raw.quality!) ? raw.quality! : DEFAULTS.quality,
       reduce: typeof raw.reduce === 'boolean' ? raw.reduce : DEFAULTS.reduce,
       haptics: typeof raw.haptics === 'boolean' ? raw.haptics : DEFAULTS.haptics,
+      typing: typeof raw.typing === 'boolean' ? raw.typing : DEFAULTS.typing,
+      micLang: typeof raw.micLang === 'string' && raw.micLang ? raw.micLang : DEFAULTS.micLang,
     };
   } catch {
     return { ...DEFAULTS };

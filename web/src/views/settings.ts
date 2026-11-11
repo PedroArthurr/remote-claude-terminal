@@ -1,3 +1,4 @@
+import { haptic } from '../fx/haptics';
 import { audio } from '../audio/engine';
 import { el } from '../dom';
 import type { PreviewKind } from '../fx/director';
@@ -9,9 +10,15 @@ const QUALITY: { id: Quality; label: string }[] = [
   { id: 'medium', label: 'Med' },
   { id: 'high', label: 'High' },
 ];
-const PREVIEWS: PreviewKind[] = ['prompt', 'tool', 'permission', 'done', 'error'];
+const PREVIEWS: PreviewKind[] = ['prompt', 'tool', 'permission', 'done', 'error', 'subagent_start', 'compact', 'interrupted'];
 
 /** Look & sound sheet: theme, sound, effect quality. Changes apply live. */
+const MIC_LANGS: [string, string][] = [
+  ['pt-BR', 'Português (BR)'],
+  ['en-US', 'English (US)'],
+  ['es-ES', 'Español'],
+];
+
 export class SettingsSheet {
   readonly root: HTMLDialogElement;
   private readonly themeBtns = new Map<ThemeId, HTMLButtonElement>();
@@ -20,6 +27,8 @@ export class SettingsSheet {
   private readonly volume: HTMLInputElement;
   private readonly reduce: HTMLInputElement;
   private readonly haptics: HTMLInputElement;
+  private readonly typing: HTMLInputElement;
+  private readonly micLang: HTMLSelectElement;
 
   constructor(preview: (k: PreviewKind) => void) {
     const themes = el(
@@ -55,7 +64,19 @@ export class SettingsSheet {
       onchange: () => audio.play('ack'),
     });
     this.reduce = el('input', { type: 'checkbox', onchange: () => prefs.set({ reduce: this.reduce.checked }) });
-    this.haptics = el('input', { type: 'checkbox', onchange: () => prefs.set({ haptics: this.haptics.checked }) });
+    this.haptics = el('input', {
+      type: 'checkbox',
+      onchange: () => {
+        prefs.set({ haptics: this.haptics.checked });
+        haptic('toggle');
+      },
+    });
+    this.typing = el('input', { type: 'checkbox', onchange: () => prefs.set({ typing: this.typing.checked }) });
+    this.micLang = el(
+      'select',
+      { class: 'select', 'aria-label': 'Dictation language', onchange: () => prefs.set({ micLang: this.micLang.value }) },
+      ...MIC_LANGS.map(([v, label]) => el('option', { value: v }, label)),
+    );
 
     const quality = el(
       'div',
@@ -83,6 +104,13 @@ export class SettingsSheet {
         { class: 'field' },
         el('span', { class: 'label' }, 'Effects'),
         el('div', { class: 'row' }, quality, switchEl(this.reduce, 'Reduce'), switchEl(this.haptics, 'Vibrate')),
+        el('div', { class: 'row' }, switchEl(this.typing, 'Typing sparks & clicks')),
+      ),
+      el(
+        'div',
+        { class: 'field' },
+        el('span', { class: 'label' }, 'Dictation'),
+        el('div', { class: 'row' }, this.micLang),
       ),
       el(
         'div',
@@ -118,6 +146,9 @@ export class SettingsSheet {
     this.volume.disabled = p.muted;
     this.reduce.checked = p.reduce;
     this.haptics.checked = p.haptics;
+    this.typing.checked = p.typing;
+    if (!MIC_LANGS.some(([v]) => v === p.micLang)) this.micLang.append(el('option', { value: p.micLang }, p.micLang));
+    this.micLang.value = p.micLang;
   }
 }
 
