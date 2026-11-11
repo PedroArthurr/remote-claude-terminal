@@ -1,3 +1,4 @@
+import './log'; // first: captures config errors too
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import express, { type Response } from 'express';
@@ -26,6 +27,7 @@ const auth = createAuth(config.token);
 const isAllowedHost = createHostCheck(config.host, config.allowedHosts);
 const store = new EventStore(config.dataDir);
 const manager = new SessionManager(config, store);
+manager.restore();
 const hookServer = startHookServer(config.hookPort, config.hookSecret, (e) => manager.handleHook(e));
 
 const app = express();
@@ -102,8 +104,19 @@ app.use('/api', (_req, res) => fail(res, 404, 'not found'));
 
 // Production: serve the built web app. In dev, Vite serves it and proxies /api and /ws here.
 if (existsSync(WEB_DIST)) {
-  app.use(express.static(WEB_DIST));
-  app.get(/^\/(?!api\/|ws$).*/, (_req, res) => res.sendFile(path.join(WEB_DIST, 'index.html')));
+  app.use(
+    express.static(WEB_DIST, {
+      setHeaders(res, file) {
+        // Hashed build output never changes; everything else (index.html, sw.js, manifest) revalidates.
+        const hashed = file.startsWith(path.join(WEB_DIST, 'assets') + path.sep);
+        res.setHeader('Cache-Control', hashed ? 'public, max-age=31536000, immutable' : 'no-cache');
+      },
+    }),
+  );
+  app.get(/^\/(?!api\/|ws$).*/, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(WEB_DIST, 'index.html'));
+  });
 }
 
 function fail(res: Response, status: number, error: string): void {

@@ -7,3 +7,4 @@ data/
 .env
 config.json
 .vite/
+logs/

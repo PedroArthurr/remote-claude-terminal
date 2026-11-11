@@ -14,7 +14,9 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "start": "node --disable-warning=ExperimentalWarning server/dist/index.js",
-    "hooks:settings": "node hooks/settings-snippet.mjs"
+    "hooks:settings": "node hooks/settings-snippet.mjs",
+    "service": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/service.ps1",
+    "icons": "node scripts/gen-icons.mjs"
   },
   "engines": {
     "node": ">=22.12"

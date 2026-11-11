@@ -8,7 +8,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite';
  * kind: a Claude Code hook name (`PreToolUse`, `Stop`...) or a cockpit event (`ccc.*`):
  *   ccc.session_create {name}   ccc.session_rename {name}   ccc.session_kill
  *   ccc.process {running, exitCode}   ccc.state {from, to, ms}   ccc.permission_answered {ms}
- *   ccc.interrupted
+ *   ccc.interrupted   ccc.session_restore {name, claudeSession}
  */
 export interface EventRow {
   ts: number;

@@ -15,5 +15,6 @@
   "hookSecret": "replace-with-another-long-random-secret",
   "dataDir": "./data",
   "scrollback": 5000,
-  "snippets": ["/clear", "/compact", "continue"]
+  "snippets": ["/clear", "/compact", "continue"],
+  "restoreSessions": true
 }

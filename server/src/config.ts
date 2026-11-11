@@ -25,6 +25,8 @@ export interface Config {
   scrollback: number;
   /** Compose-mode quick messages. */
   snippets: string[];
+  /** Recreate the sessions of the last run on start (`startupCommand --resume <id>` / `--continue`). */
+  restoreSessions: boolean;
 }
 
 const DEFAULT_SCROLLBACK = 5000;
@@ -106,6 +108,8 @@ function validate(c: Partial<Config>): Config {
   ) {
     errors.push(`snippets: expected non-empty strings (max ${MAX_SNIPPET_LENGTH} chars)`);
   }
+  if (c.restoreSessions === undefined) c.restoreSessions = true;
+  else if (typeof c.restoreSessions !== 'boolean') errors.push('restoreSessions: expected boolean');
   if (typeof c.defaultCwd === 'string' && !existsSync(c.defaultCwd)) {
     errors.push(`defaultCwd: folder not found: ${c.defaultCwd}`);
   }

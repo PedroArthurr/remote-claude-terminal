@@ -13,6 +13,9 @@ export type SessionEvent = Extract<TerminalMessage, { type: 'output' | 'resize' 
 export type SnapshotMessage = Extract<TerminalMessage, { type: 'snapshot' }>;
 
 export interface SessionOptions {
+  /** Given when restoring a saved session (keeps CCC_SESSION_ID and stats continuous). */
+  id?: string;
+  createdAt?: number;
   name: string;
   cwd: string;
   shell: string;
@@ -49,9 +52,9 @@ const SANE_MODES = '\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[
  * that point plus the events that follow reproduce the screen with no gaps or duplicates.
  */
 export class Session {
-  readonly id = randomUUID();
+  readonly id: string;
   readonly cwd: string;
-  readonly createdAt = Date.now();
+  readonly createdAt: number;
   name: string;
   exitCode: number | null = null;
 
@@ -63,6 +66,8 @@ export class Session {
   activity: string | null = null;
   activityT = 0;
   model: string | null = null;
+  /** Claude Code's session_id of the current conversation (for `--resume` after a restart). */
+  claudeSession: string | null = null;
   /** Server time of the last hook received. */
   lastHookAt = 0;
   /** Browsers attached right now (kept by the WebSocket layer). */
@@ -79,6 +84,8 @@ export class Session {
   private cursorStyle = 0;
 
   constructor(private readonly opts: SessionOptions) {
+    this.id = opts.id ?? randomUUID();
+    this.createdAt = opts.createdAt ?? Date.now();
     this.name = opts.name;
     this.cwd = opts.cwd;
     this.term = new Terminal({ ...INITIAL_SIZE, scrollback: opts.scrollback, allowProposedApi: true });

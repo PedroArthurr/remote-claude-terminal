@@ -7,6 +7,7 @@ import { Background } from './fx/background';
 import { FxDirector } from './fx/director';
 import { Particles } from './fx/particles';
 import { prefs, type ThemeId } from './prefs';
+import { setupServiceWorker } from './pwa';
 import { applyTheme, THEMES } from './themes';
 import { trackViewport } from './viewport';
 import { pruneDrafts } from './views/compose';
@@ -94,6 +95,7 @@ app.append(
 );
 setView('boot');
 trackViewport();
+setupServiceWorker();
 
 addEventListener('hashchange', () => route());
 void boot();

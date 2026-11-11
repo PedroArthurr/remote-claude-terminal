@@ -53,5 +53,8 @@ Notificações push, XP/níveis/conquistas, multiusuário, WSL, app nativo.
 - `npm run typecheck` — `tsc` em todos os workspaces
 - `npm run build` — typecheck + bundle: `server/dist`, `hooks/dist/cc-hook.mjs`, `web/dist`
 - `npm start` — server de produção (serve `web/dist`)
+- `npm run service -- install|start|stop|restart|status|logs|uninstall` — serviço via Agendador de Tarefas (`scripts/service.ps1`; `-AtStartup` = antes do logon, admin); log em `logs/server.log`
+- `npm run icons` — regenera ícones PWA em `web/public/icons/`
+- Sessões salvas em `data/sessions.json`; recriadas no start com `claude --resume <id>` / `--continue`
 - Config: `config.json` na raiz (copiar de `config.example.json`); override com env `CCC_CONFIG`
 - Celular: `tailscale serve --bg 7420` (prod) ou `--bg 5173` (dev); ver README

@@ -9,6 +9,7 @@ import {
 } from '@ccc/shared';
 import { compactForLog, interpretHook } from './activity';
 import type { Config } from './config';
+import { SavedSessions } from './saved';
 import { Session } from './session';
 import type { EventStore } from './store';
 
@@ -21,6 +22,8 @@ const PERMISSION_ANSWER = /^(\r|[1-9]|[yYnN]|\x1b)$/;
 const INTERRUPT_CHECKS_MS = [1200, 3000];
 const SPINNER = /^\s*\S \p{Lu}\p{Ll}+…/mu;
 const INTERRUPT_SCAN_ROWS = 40;
+// Claude Code session ids are UUIDs; anything else is never typed into a shell.
+const CLAUDE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class SessionError extends Error {
   constructor(
@@ -38,11 +41,14 @@ export class SessionManager {
   private readonly activityListeners = new Set<(a: Activity) => void>();
   private timer: NodeJS.Timeout | null = null;
   private lastSent = '';
+  private readonly saved: SavedSessions;
 
   constructor(
     private readonly config: Config,
     private readonly store: EventStore,
-  ) {}
+  ) {
+    this.saved = new SavedSessions(config.dataDir);
+  }
 
   get(id: string): Session | undefined {
     return this.sessions.get(id);
@@ -56,18 +62,48 @@ export class SessionManager {
     const fav = this.config.favorites[favorite];
     if (!fav) throw new SessionError(400, 'unknown favorite');
     if (!existsSync(fav.path)) throw new SessionError(400, `folder not found: ${fav.path}`);
-    const s = new Session({
+    const s = this.spawn({
       name: this.uniqueName(cleanName(name) || fav.name),
       cwd: fav.path,
+      startupCommand: this.config.startupCommand,
+    });
+    this.log(s, 'ccc.session_create', { name: s.name });
+    this.persist();
+    return s;
+  }
+
+  /** Recreates the sessions saved before the last shutdown, resuming their Claude conversations. */
+  restore(): void {
+    if (!this.config.restoreSessions) return;
+    for (const saved of this.saved.load()) {
+      if (this.sessions.has(saved.id)) continue;
+      if (!existsSync(saved.cwd)) {
+        console.warn(`[sessions] not restored, folder not found: "${saved.name}" ${saved.cwd}`);
+        continue;
+      }
+      const s = this.spawn({
+        id: saved.id,
+        createdAt: saved.createdAt,
+        name: this.uniqueName(cleanName(saved.name) || 'session'),
+        cwd: saved.cwd,
+        startupCommand: resumeCommand(this.config.startupCommand, saved.claudeSession),
+      });
+      s.claudeSession = saved.claudeSession;
+      this.log(s, 'ccc.session_restore', { name: s.name, claudeSession: saved.claudeSession });
+    }
+    this.persist(); // drops the ones that could not be restored
+  }
+
+  private spawn(o: { id?: string; createdAt?: number; name: string; cwd: string; startupCommand: string }): Session {
+    const s = new Session({
+      ...o,
       shell: this.config.shell,
       shellArgs: this.config.shellArgs,
-      startupCommand: this.config.startupCommand,
       scrollback: this.config.scrollback,
       hookUrl: `http://127.0.0.1:${this.config.hookPort}${HOOK_PATH}`,
       hookSecret: this.config.hookSecret,
     });
     this.sessions.set(s.id, s);
-    this.log(s, 'ccc.session_create', { name: s.name });
     s.subscribe((e) => {
       if (e.type !== 'process') return this.schedule();
       this.log(s, 'ccc.process', { running: e.running, exitCode: e.exitCode });
@@ -77,7 +113,7 @@ export class SessionManager {
       }
       this.changed();
     });
-    console.log(`[sessions] + "${s.name}" ${s.id} in ${s.cwd}`);
+    console.log(`[sessions] + "${s.name}" ${s.id} in ${s.cwd}: ${o.startupCommand || '(shell)'}`);
     this.changed();
     return s;
   }
@@ -88,6 +124,7 @@ export class SessionManager {
     if (!clean) throw new SessionError(400, 'name is empty');
     s.name = clean;
     this.log(s, 'ccc.session_rename', { name: clean });
+    this.persist();
     this.changed();
     return s;
   }
@@ -98,10 +135,12 @@ export class SessionManager {
     for (const fn of this.removedListeners) fn(id);
     this.log(s, 'ccc.session_kill');
     s.dispose();
+    this.persist();
     console.log(`[sessions] - "${s.name}" ${s.id}`);
     this.changed();
   }
 
+  /** Server shutdown: the saved list stays as is, so the sessions come back on the next start. */
   disposeAll(): void {
     for (const s of this.sessions.values()) s.dispose();
     this.sessions.clear();
@@ -123,6 +162,18 @@ export class SessionManager {
     if (e.hook_event_name === 'SessionStart' && typeof e.model === 'string') {
       s.model = e.model;
       dirty = true;
+    }
+    // Resume target. SessionStart/End alone don't count: a conversation without a prompt can't be resumed.
+    const cs = e.session_id;
+    if (
+      typeof cs === 'string' &&
+      cs !== s.claudeSession &&
+      CLAUDE_SESSION_ID.test(cs) &&
+      e.hook_event_name !== 'SessionStart' &&
+      e.hook_event_name !== 'SessionEnd'
+    ) {
+      s.claudeSession = cs;
+      this.persist();
     }
     if (it) {
       const late = env.t < s.stateT;
@@ -207,6 +258,18 @@ export class SessionManager {
     return true;
   }
 
+  private persist(): void {
+    this.saved.save(
+      [...this.sessions.values()].map((s) => ({
+        id: s.id,
+        name: s.name,
+        cwd: s.cwd,
+        createdAt: s.createdAt,
+        claudeSession: s.claudeSession,
+      })),
+    );
+  }
+
   private log(s: Session, kind: string, data?: unknown): void {
     this.store.append({ ts: Date.now(), sessionId: s.id, cwd: s.cwd, kind, state: s.state, data });
   }
@@ -274,4 +337,10 @@ export class SessionManager {
 function cleanName(name: unknown): string {
   if (typeof name !== 'string') return '';
   return name.replace(/[\x00-\x1f\x7f]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_SESSION_NAME);
+}
+
+/** `claude --resume <id>` when the conversation is known, else `claude --continue` (latest in the folder). */
+function resumeCommand(base: string, claudeSession: string | null): string {
+  if (!base.trim()) return '';
+  return claudeSession && CLAUDE_SESSION_ID.test(claudeSession) ? `${base} --resume ${claudeSession}` : `${base} --continue`;
 }
