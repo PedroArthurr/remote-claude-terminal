@@ -1,98 +1,164 @@
-import type { ServerMessage, TermSize } from '@ccc/shared';
+import type { ServerMessage } from '@ccc/shared';
+import { api } from './api';
 import { Connection, type ConnState } from './connection';
-import { createTerminal } from './terminal';
+import { el, toast } from './dom';
+import { Dashboard } from './views/dashboard';
+import { LoginView } from './views/login';
+import { TerminalView } from './views/terminal-view';
 import './style.css';
 
-const app = document.querySelector<HTMLDivElement>('#app')!;
-app.innerHTML = `
-  <header class="bar">
-    <span class="brand">cc<b>-</b>cockpit</span>
-    <span class="spacer"></span>
-    <span class="meta" data-ref="size"></span>
-    <span class="status"><i class="dot"></i><span data-ref="conn">connecting</span></span>
-  </header>
-  <main class="stage">
-    <div class="term" data-ref="term"></div>
-    <div class="overlay" data-ref="overlay">
-      <div class="card">
-        <div class="card-title">Process exited</div>
-        <div class="card-sub" data-ref="exit"></div>
-        <button class="btn" data-ref="restart">Restart <kbd>Enter</kbd></button>
-      </div>
-    </div>
-  </main>
-`;
-const ref = <T extends HTMLElement = HTMLElement>(name: string) => app.querySelector<T>(`[data-ref="${name}"]`)!;
+type Route = { view: 'dash' } | { view: 'term'; id: string };
+type View = 'boot' | 'login' | 'dash' | 'term';
 
-const { term, preferredSize } = createTerminal(ref('term'));
-let running = true;
-let lastSent: TermSize | null = null;
+const app = document.querySelector<HTMLDivElement>('#app')!;
+const title = el('span', { class: 'title' });
+const size = el('span', { class: 'meta' });
+const connText = el('span', {}, 'connecting');
+const back = el('button', { class: 'back', 'aria-label': 'Back to sessions', onclick: () => go({ view: 'dash' }) }, '‹');
 
 const conn = new Connection({ onMessage, onState });
-conn.connect();
+const dashboard = new Dashboard((id) => go({ view: 'term', id }));
+const terminal = new TerminalView(conn, (s) => (size.textContent = s));
+const login = new LoginView(() => void start());
 
-term.onData((data) => {
-  if (!running) {
-    if (data === '\r') restart();
-    return;
+app.append(
+  el(
+    'header',
+    { class: 'bar' },
+    back,
+    el('span', { class: 'brand', onclick: () => go({ view: 'dash' }) }, 'cc', el('b', {}, '-'), 'cockpit'),
+    title,
+    el('span', { class: 'spacer' }),
+    size,
+    el('span', { class: 'status' }, el('i', { class: 'dot' }), connText),
+  ),
+  el(
+    'main',
+    { class: 'views' },
+    el('section', { class: 'view', 'data-view': 'login' }, login.root),
+    el('section', { class: 'view', 'data-view': 'dash' }, dashboard.root),
+    el('section', { class: 'view', 'data-view': 'term' }, terminal.root),
+  ),
+);
+setView('boot');
+
+addEventListener('hashchange', () => route());
+void boot();
+
+async function boot(): Promise<void> {
+  try {
+    if ((await login.tryUrlToken()) || (await api.authStatus()).authed) return start();
+  } catch {
+    toast('Server unreachable', 'bad');
   }
-  conn.send({ type: 'input', data });
-});
-term.onResize(({ cols, rows }) => (ref('size').textContent = `${cols}×${rows}`));
-ref('restart').addEventListener('click', restart);
-ref('term').addEventListener('pointerdown', () => term.focus());
-term.focus();
-
-// Ask the server for the size that fills the container. The PTY size is the server's call.
-function syncSize(force = false): void {
-  const s = preferredSize();
-  if (!s) return;
-  if (!force && lastSent && s.cols === lastSent.cols && s.rows === lastSent.rows) return;
-  if (conn.send({ type: 'resize', ...s })) lastSent = s;
+  showLogin();
 }
 
-let resizeTimer = 0;
-new ResizeObserver(() => {
-  clearTimeout(resizeTimer);
-  resizeTimer = window.setTimeout(() => syncSize(), 80);
-}).observe(ref('term'));
+async function start(): Promise<void> {
+  conn.connect();
+  setView('dash');
+  route();
+  await dashboard.loadFavorites().catch(() => undefined);
+}
+
+function showLogin(): void {
+  conn.stop();
+  terminal.detach();
+  setView('login');
+  login.focus();
+}
+
+// ── routing: #/ = dashboard, #/s/<id> = terminal ────────
+
+function parseRoute(): Route {
+  const m = /^#\/s\/([\w-]+)$/.exec(location.hash);
+  return m ? { view: 'term', id: m[1]! } : { view: 'dash' };
+}
+
+// True while the current terminal entry was pushed on top of the dashboard entry.
+let pushed = false;
+
+function go(r: Route): void {
+  const hash = r.view === 'term' ? `#/s/${r.id}` : '#/';
+  if (location.hash === hash) return route();
+  const from = parseRoute().view;
+  // Opening a session pushes history so Android "back" returns to the dashboard; closing pops it.
+  if (r.view === 'term' && from === 'dash') {
+    pushed = true;
+    location.hash = hash;
+    return;
+  }
+  if (r.view === 'dash' && pushed) {
+    pushed = false;
+    history.back();
+    return;
+  }
+  history.replaceState(null, '', hash);
+  route();
+}
+
+function route(): void {
+  if (app.dataset.view === 'login') return;
+  const r = parseRoute();
+  if (r.view === 'term') {
+    terminal.attach(r.id);
+    setView('term');
+    updateTitle();
+  } else {
+    pushed = false;
+    terminal.detach();
+    setView('dash');
+    title.textContent = '';
+    size.textContent = '';
+  }
+}
+
+function setView(v: View): void {
+  app.dataset.view = v;
+}
+
+function updateTitle(): void {
+  const s = dashboard.list.find((x) => x.id === terminal.attached);
+  title.textContent = s ? s.name : '';
+  document.title = s ? `${s.name} · cc-cockpit` : 'cc-cockpit';
+}
+
+// ── server messages ─────────────────────────────────────
 
 function onMessage(msg: ServerMessage): void {
   switch (msg.type) {
-    case 'snapshot':
-      // Reset, resize and paint in one parse pass: no blank frame on reconnect.
-      term.write('\x1bc', () => term.resize(msg.cols, msg.rows));
-      term.write(msg.data, () => syncSize(true));
-      setRunning(msg.running, null);
+    case 'sessions':
+      dashboard.update(msg.sessions);
+      updateTitle();
       break;
-    case 'output':
-      term.write(msg.data);
-      break;
-    case 'resize':
-      // After pending output, which was produced at the old size.
-      term.write('', () => term.resize(msg.cols, msg.rows));
-      break;
-    case 'process':
-      setRunning(msg.running, msg.exitCode);
+    case 'closed':
+      if (msg.sessionId === terminal.attached) {
+        toast('Session closed');
+        terminal.detach();
+        go({ view: 'dash' });
+      }
       break;
     case 'pong':
       break;
+    default:
+      terminal.handle(msg);
   }
 }
 
+let authCheck: Promise<void> | null = null;
+
 function onState(state: ConnState): void {
   app.dataset.conn = state;
-  ref('conn').textContent = state;
-  if (state !== 'online') lastSent = null;
-}
-
-function setRunning(value: boolean, exitCode: number | null): void {
-  running = value;
-  ref('overlay').classList.toggle('show', !value);
-  ref('exit').textContent = exitCode === null ? '' : `exit code ${exitCode}`;
-  if (value) term.focus();
-}
-
-function restart(): void {
-  conn.send({ type: 'restart' });
+  connText.textContent = state;
+  if (state === 'online') terminal.reattach();
+  // A socket that keeps failing may mean the cookie is gone (token rotated).
+  if (state === 'offline' && app.dataset.view !== 'login' && !authCheck) {
+    authCheck = api
+      .authStatus()
+      .then((s) => {
+        if (!s.authed) showLogin();
+      })
+      .catch(() => undefined)
+      .finally(() => (authCheck = null));
+  }
 }

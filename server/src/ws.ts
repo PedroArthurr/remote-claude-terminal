@@ -1,8 +1,10 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { WS_PATH, type ClientMessage, type ServerMessage, type TermSize } from '@ccc/shared';
-import type { Config } from './config';
+import type { Auth } from './auth';
+import { hostnameOf, requestHostname } from './net';
 import type { Session } from './session';
+import type { SessionManager } from './sessions';
 
 const HEARTBEAT_MS = 30_000;
 // A client this far behind is dropped; it resyncs from a fresh snapshot when it reconnects.
@@ -11,38 +13,57 @@ const MAX_DIM = 1000;
 
 interface Client {
   ws: WebSocket;
-  /** Last size this client asked for. */
+  session: Session | null;
+  unsubscribe: (() => void) | null;
+  /** Last size this client asked for, for the attached session. */
   size: TermSize | null;
   alive: boolean;
 }
 
-export function attachWebSocket(server: Server, session: Session, config: Config): void {
+export interface WsDeps {
+  manager: SessionManager;
+  auth: Auth;
+  isAllowedHost: (hostname: string) => boolean;
+}
+
+export function attachWebSocket(server: Server, { manager, auth, isAllowedHost }: WsDeps): void {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
   const clients = new Set<Client>();
-  // Marco 2 adds the Tailscale host names here.
-  const allowedHosts = new Set(['localhost', '127.0.0.1', '[::1]', config.host.toLowerCase()]);
 
-  session.subscribe((e) => {
-    for (const c of clients) send(c, e);
+  manager.onChange((sessions) => {
+    for (const c of clients) send(c, { type: 'sessions', sessions });
+  });
+  manager.onRemoved((id) => {
+    for (const c of clients) {
+      if (c.session?.id !== id) continue;
+      detach(c, false);
+      send(c, { type: 'closed', sessionId: id });
+    }
   });
 
   server.on('upgrade', (req, socket, head) => {
-    if (pathname(req) !== WS_PATH || !isTrustedOrigin(req, allowedHosts)) {
+    if (pathname(req) !== WS_PATH || !isTrustedOrigin(req, isAllowedHost)) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
       return;
     }
+    if (!auth.isAuthed(req)) {
+      socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+      return;
+    }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const client: Client = { ws, size: null, alive: true };
-      // Snapshot and subscription in the same tick: nothing can slip in between.
-      send(client, session.snapshot());
+      const client: Client = { ws, session: null, unsubscribe: null, size: null, alive: true };
       clients.add(client);
+      send(client, { type: 'sessions', sessions: manager.list() });
       ws.on('pong', () => (client.alive = true));
       ws.on('message', (raw, isBinary) => {
         if (isBinary) return;
         const msg = parseClientMessage(raw.toString());
         if (msg) handle(client, msg);
       });
-      ws.on('close', () => clients.delete(client));
+      ws.on('close', () => {
+        clients.delete(client);
+        detach(client);
+      });
       ws.on('error', () => ws.terminate());
     });
   });
@@ -59,19 +80,51 @@ export function attachWebSocket(server: Server, session: Session, config: Config
   }, HEARTBEAT_MS);
   server.on('close', () => clearInterval(heartbeat));
 
+  function attach(c: Client, session: Session): void {
+    detach(c, false);
+    c.session = session;
+    c.size = null;
+    // Snapshot and subscription in the same tick: nothing can slip in between.
+    send(c, session.snapshot());
+    c.unsubscribe = session.subscribe((e) => send(c, e));
+    session.viewers++;
+    manager.changed();
+  }
+
+  function detach(c: Client, publish = true): void {
+    if (!c.session) return;
+    c.unsubscribe?.();
+    c.session.viewers = Math.max(0, c.session.viewers - 1);
+    c.session = null;
+    c.unsubscribe = null;
+    c.size = null;
+    if (publish) manager.changed();
+  }
+
   function handle(c: Client, msg: ClientMessage): void {
+    const s = c.session;
     switch (msg.type) {
+      case 'attach': {
+        const target = manager.get(msg.sessionId);
+        if (target) attach(c, target);
+        else send(c, { type: 'closed', sessionId: msg.sessionId });
+        break;
+      }
+      case 'detach':
+        detach(c);
+        break;
       case 'input':
         // PTY size follows the last active client.
-        if (c.size) session.resize(c.size.cols, c.size.rows);
-        session.write(msg.data);
+        if (c.size) s?.resize(c.size.cols, c.size.rows);
+        s?.write(msg.data);
         break;
       case 'resize':
+        if (!s) break;
         c.size = { cols: msg.cols, rows: msg.rows };
-        session.resize(msg.cols, msg.rows);
+        s.resize(msg.cols, msg.rows);
         break;
       case 'restart':
-        session.restart();
+        s?.restart();
         break;
       case 'ping':
         send(c, { type: 'pong', t: msg.t });
@@ -97,16 +150,12 @@ function pathname(req: IncomingMessage): string {
   }
 }
 
-// Origin must match Host (cross-site WebSocket hijacking) and Host must be known (DNS rebinding).
-function isTrustedOrigin(req: IncomingMessage, allowedHosts: Set<string>): boolean {
-  const { host, origin } = req.headers;
-  if (!host || !origin) return false;
-  try {
-    const h = new URL(`http://${host}`);
-    return new URL(origin).host === h.host && allowedHosts.has(h.hostname);
-  } catch {
-    return false;
-  }
+// Cross-site WebSocket hijacking: the page must come from one of our own names.
+// Host is checked too (DNS rebinding). They may differ behind a proxy, so each is checked on its own.
+function isTrustedOrigin(req: IncomingMessage, isAllowedHost: (h: string) => boolean): boolean {
+  const host = requestHostname(req);
+  const origin = hostnameOf(req.headers.origin, true);
+  return !!host && !!origin && isAllowedHost(host) && isAllowedHost(origin);
 }
 
 const isDim = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 2 && (v as number) <= MAX_DIM;
@@ -121,6 +170,10 @@ function parseClientMessage(raw: string): ClientMessage | null {
   if (typeof m !== 'object' || m === null) return null;
   const o = m as Record<string, unknown>;
   switch (o.type) {
+    case 'attach':
+      return typeof o.sessionId === 'string' ? { type: 'attach', sessionId: o.sessionId } : null;
+    case 'detach':
+      return { type: 'detach' };
     case 'input':
       return typeof o.data === 'string' ? { type: 'input', data: o.data } : null;
     case 'resize':

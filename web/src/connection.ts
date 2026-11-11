@@ -19,6 +19,7 @@ export class Connection {
   private attempt = 0;
   private lastSeen = 0;
   private retryTimer = 0;
+  private stopped = true;
   private readonly url: string;
 
   constructor(private readonly h: ConnectionHandlers) {
@@ -29,12 +30,17 @@ export class Connection {
       if (document.visibilityState === 'visible') this.checkAlive();
     });
     addEventListener('online', () => {
-      if (this.ws?.readyState !== WebSocket.OPEN) this.reconnectNow();
+      if (!this.stopped && this.ws?.readyState !== WebSocket.OPEN) this.reconnectNow();
     });
+  }
+
+  get online(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
   }
 
   connect(): void {
     clearTimeout(this.retryTimer);
+    this.stopped = false;
     this.h.onState('connecting');
     const ws = new WebSocket(this.url);
     this.ws = ws;
@@ -51,9 +57,20 @@ export class Connection {
       if (this.ws !== ws) return;
       this.ws = null;
       this.h.onState('offline');
+      if (this.stopped) return;
       const delay = Math.min(BACKOFF_MAX_MS, BACKOFF_MIN_MS * 2 ** this.attempt++);
       this.retryTimer = window.setTimeout(() => this.connect(), delay * (0.8 + Math.random() * 0.4));
     };
+  }
+
+  /** Closes and stays closed until `connect()` (e.g. logged out). */
+  stop(): void {
+    this.stopped = true;
+    clearTimeout(this.retryTimer);
+    const ws = this.ws;
+    this.ws = null;
+    ws?.close();
+    this.h.onState('offline');
   }
 
   /** Dropped (not queued) while offline: replaying stale keystrokes into a TUI is dangerous. */

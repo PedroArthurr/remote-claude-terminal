@@ -2,15 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { spawn, type IPty } from 'node-pty';
 import xtermHeadless from '@xterm/headless';
 import xtermSerialize from '@xterm/addon-serialize';
-import type { ServerMessage, TermSize } from '@ccc/shared';
+import type { SessionInfo, SessionState, TerminalMessage, TermSize } from '@ccc/shared';
 
 // Both packages are CommonJS bundles; default import is the reliable interop path.
 const { Terminal } = xtermHeadless;
 const { SerializeAddon } = xtermSerialize;
 type HeadlessTerminal = InstanceType<typeof Terminal>;
 
-export type SessionEvent = Extract<ServerMessage, { type: 'output' | 'resize' | 'process' }>;
-export type SnapshotMessage = Extract<ServerMessage, { type: 'snapshot' }>;
+export type SessionEvent = Extract<TerminalMessage, { type: 'output' | 'resize' | 'process' }>;
+export type SnapshotMessage = Extract<TerminalMessage, { type: 'snapshot' }>;
 
 export interface SessionOptions {
   name: string;
@@ -23,6 +23,12 @@ export interface SessionOptions {
 }
 
 const INITIAL_SIZE: TermSize = { cols: 120, rows: 30 };
+
+const PREVIEW_LINES = 3;
+const PREVIEW_SCAN = 80;
+const PREVIEW_MAX_CHARS = 160;
+// Box drawing and block elements used by TUI frames.
+const CHROME = /[─-▟]/g;
 
 // Vars Claude Code and host terminals inject into child processes. Inheriting them makes `claude`
 // inside the PTY think it is nested in another session / running inside VS Code or Windows Terminal.
@@ -41,14 +47,20 @@ const SANE_MODES = '\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[
  */
 export class Session {
   readonly id = randomUUID();
-  readonly name: string;
   readonly cwd: string;
+  readonly createdAt = Date.now();
+  name: string;
+  state: SessionState = 'idle';
+  exitCode: number | null = null;
+  /** Browsers attached right now (kept by the WebSocket layer). */
+  viewers = 0;
 
   private readonly term: HeadlessTerminal;
   private readonly serializer = new SerializeAddon();
   private readonly listeners = new Set<(e: SessionEvent) => void>();
   private proc: IPty | null = null;
   private size: TermSize = INITIAL_SIZE;
+  private disposed = false;
   // Not covered by the serialize addon; tracked from the stream.
   private cursorHidden = false;
   private cursorStyle = 0;
@@ -77,7 +89,42 @@ export class Session {
     let data = this.serializer.serialize();
     if (this.cursorHidden) data += '\x1b[?25l';
     if (this.cursorStyle) data += `\x1b[${this.cursorStyle} q`;
-    return { type: 'snapshot', cols: this.term.cols, rows: this.term.rows, data, running: this.running };
+    return {
+      type: 'snapshot',
+      sessionId: this.id,
+      cols: this.term.cols,
+      rows: this.term.rows,
+      data,
+      running: this.running,
+    };
+  }
+
+  info(): SessionInfo {
+    return {
+      id: this.id,
+      name: this.name,
+      cwd: this.cwd,
+      state: this.state,
+      running: this.running,
+      exitCode: this.exitCode,
+      createdAt: this.createdAt,
+      preview: this.preview(),
+      viewers: this.viewers,
+    };
+  }
+
+  /** Last lines with real content, skipping blank rows and TUI chrome (box borders, empty prompt). */
+  preview(max = PREVIEW_LINES): string[] {
+    if (this.disposed) return [];
+    const buf = this.term.buffer.active;
+    const bottom = buf.baseY + this.term.rows - 1;
+    const lines: string[] = [];
+    for (let y = bottom; y >= 0 && y > bottom - PREVIEW_SCAN && lines.length < max; y--) {
+      const raw = buf.getLine(y)?.translateToString(true) ?? '';
+      const text = raw.replace(CHROME, ' ').replace(/\s+/g, ' ').trim();
+      if (/[\p{L}\p{N}]/u.test(text)) lines.unshift(text.slice(0, PREVIEW_MAX_CHARS));
+    }
+    return lines;
   }
 
   write(data: string): void {
@@ -91,21 +138,27 @@ export class Session {
     // Queued so output produced at the old size is parsed at the old size.
     this.inOrder(() => {
       this.term.resize(cols, rows);
-      this.emit({ type: 'resize', cols, rows });
+      this.emit({ type: 'resize', sessionId: this.id, cols, rows });
     });
   }
 
   restart(): void {
-    if (this.proc) return;
+    if (this.proc || this.disposed) return;
     // Scroll the old screen into scrollback; the new ConPTY assumes a blank screen.
     this.output(`\x1b[${this.size.rows};1H${'\n'.repeat(this.size.rows)}\x1b[H`);
     this.spawn();
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     const proc = this.proc;
     this.proc = null;
-    proc?.kill();
+    try {
+      proc?.kill();
+    } catch {
+      // Already gone.
+    }
     this.listeners.clear();
     this.term.dispose();
   }
@@ -120,17 +173,19 @@ export class Session {
       env: this.env(),
     });
     this.proc = proc;
+    this.exitCode = null;
     proc.onData((data) => {
       if (this.proc === proc) this.output(data);
     });
     proc.onExit(({ exitCode }) => {
       if (this.proc !== proc) return;
       this.proc = null;
+      this.exitCode = exitCode;
       this.output(`${SANE_MODES}\r\n\x1b[2m[process exited with code ${exitCode}]\x1b[0m\r\n`);
-      this.inOrder(() => this.emit({ type: 'process', running: false, exitCode }));
+      this.inOrder(() => this.emit({ type: 'process', sessionId: this.id, running: false, exitCode }));
     });
     if (this.opts.startupCommand) proc.write(`${this.opts.startupCommand}\r`);
-    this.inOrder(() => this.emit({ type: 'process', running: true, exitCode: null }));
+    this.inOrder(() => this.emit({ type: 'process', sessionId: this.id, running: true, exitCode: null }));
   }
 
   private env(): Record<string, string> {
@@ -145,7 +200,7 @@ export class Session {
   }
 
   private output(data: string): void {
-    this.term.write(data, () => this.emit({ type: 'output', data }));
+    this.term.write(data, () => this.emit({ type: 'output', sessionId: this.id, data }));
   }
 
   /** Runs `fn` after everything written so far was parsed. */
@@ -154,6 +209,7 @@ export class Session {
   }
 
   private emit(e: SessionEvent): void {
+    if (this.disposed) return;
     for (const fn of this.listeners) fn(e);
   }
 

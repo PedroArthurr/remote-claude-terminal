@@ -54,3 +54,4 @@ Notificações push, XP/níveis/conquistas, multiusuário, WSL, app nativo.
 - `npm run build` — typecheck + bundle: `server/dist`, `hooks/dist/cc-hook.mjs`, `web/dist`
 - `npm start` — server de produção (serve `web/dist`)
 - Config: `config.json` na raiz (copiar de `config.example.json`); override com env `CCC_CONFIG`
+- Celular: `tailscale serve --bg 7420` (prod) ou `--bg 5173` (dev); ver README

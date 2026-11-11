@@ -1,5 +1,6 @@
 {
   "host": "127.0.0.1",
+  "allowedHosts": [],
   "port": 7420,
   "webDevPort": 5173,
   "shell": "pwsh.exe",

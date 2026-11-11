@@ -1,14 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import type { Favorite } from '@ccc/shared';
+import { findTailscaleIp, isLoopback, isTailscaleIp } from './net';
 import { REPO_ROOT } from './paths';
 
-export interface Favorite {
-  name: string;
-  path: string;
-}
-
 export interface Config {
+  /** 127.0.0.1 (behind `tailscale serve`), a Tailscale IP, or "tailscale" to auto-detect it. */
   host: string;
+  /** Extra Host-header names to accept (e.g. a custom DNS name). Loopback and *.ts.net are built in. */
+  allowedHosts: string[];
   port: number;
   webDevPort: number;
   shell: string;
@@ -24,8 +24,7 @@ export interface Config {
 }
 
 const DEFAULT_SCROLLBACK = 5000;
-
-const FORBIDDEN_HOSTS = new Set(['0.0.0.0', '::', '[::]', '']);
+const MIN_SECRET_LENGTH = 32;
 
 export function configPath(): string {
   return process.env.CCC_CONFIG ?? path.join(REPO_ROOT, 'config.json');
@@ -40,6 +39,15 @@ export function loadConfig(): Config {
   const cfg = validate(raw);
   // Relative paths in config are relative to the config file.
   cfg.dataDir = path.resolve(path.dirname(file), cfg.dataDir);
+  if (cfg.host === 'tailscale') {
+    const ip = findTailscaleIp();
+    if (!ip) throw new Error('host: "tailscale" but no Tailscale IP found. Is Tailscale running?');
+    cfg.host = ip;
+  }
+  if (cfg.favorites.length === 0) cfg.favorites = [{ name: path.basename(cfg.defaultCwd) || 'home', path: cfg.defaultCwd }];
+  for (const f of cfg.favorites) {
+    if (!existsSync(f.path)) console.warn(`[config] favorite "${f.name}": folder not found: ${f.path}`);
+  }
   return cfg;
 }
 
@@ -66,9 +74,19 @@ function validate(c: Partial<Config>): Config {
   ) {
     errors.push('favorites: expected {name, path}[]');
   }
-  // Never listen on all interfaces (see CLAUDE.md, item 7).
-  if (typeof c.host === 'string' && FORBIDDEN_HOSTS.has(c.host.trim())) {
-    errors.push(`host: "${c.host}" is forbidden; use 127.0.0.1 or the Tailscale IP`);
+  // Only loopback or Tailscale; never 0.0.0.0 or a LAN address (CLAUDE.md, item 7).
+  if (typeof c.host === 'string' && c.host !== 'tailscale' && !isLoopback(c.host) && !isTailscaleIp(c.host)) {
+    errors.push(`host: "${c.host}" is not allowed; use 127.0.0.1, a Tailscale IP (100.x) or "tailscale"`);
+  }
+  if (c.allowedHosts === undefined) c.allowedHosts = [];
+  else if (!Array.isArray(c.allowedHosts) || !c.allowedHosts.every((h) => typeof h === 'string')) {
+    errors.push('allowedHosts: expected string[]');
+  }
+  for (const k of ['token', 'hookSecret'] as const) {
+    const v = c[k];
+    if (typeof v === 'string' && (v.length < MIN_SECRET_LENGTH || v.startsWith('replace-with'))) {
+      errors.push(`${k}: use a random value of at least ${MIN_SECRET_LENGTH} chars`);
+    }
   }
   if (c.scrollback === undefined) c.scrollback = DEFAULT_SCROLLBACK;
   else if (!Number.isInteger(c.scrollback) || c.scrollback < 0) errors.push('scrollback: expected integer >= 0');

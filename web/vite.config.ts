@@ -19,6 +19,8 @@ export default defineConfig({
     host: '127.0.0.1',
     port: webDevPort,
     strictPort: true,
+    // Lets `tailscale serve <webDevPort>` reach the dev server from the phone.
+    allowedHosts: ['.ts.net'],
     proxy: {
       '/api': { target },
       '/ws': { target, ws: true },
