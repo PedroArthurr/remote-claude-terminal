@@ -1,0 +1,554 @@
+/* Themes & effects (Marco 5). Base layout lives in style.css. */
+
+/* ── layers: backdrop < app < particles ─────────────── */
+
+#fx-bg,
+#fx-top {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
+#fx-bg {
+  z-index: 0;
+}
+
+#fx-bg[data-backdrop='starfield'] {
+  image-rendering: pixelated;
+}
+
+#app {
+  z-index: 1;
+}
+
+#fx-top {
+  z-index: 30;
+}
+
+.toast {
+  z-index: 40;
+}
+
+/* theme cross-fade (only while switching) */
+html.theme-switch *,
+html.theme-switch *::before,
+html.theme-switch *::after {
+  transition:
+    background-color 400ms ease,
+    color 400ms ease,
+    border-color 400ms ease,
+    box-shadow 400ms ease !important;
+}
+
+/* ── header additions ───────────────────────────────── */
+
+.ico {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.icon-btn.off {
+  color: var(--bad);
+}
+
+/* zero specificity: [data-state] tones win */
+:where(.chip) {
+  --tone: var(--muted);
+  --tone-rgb: 122 116 168;
+}
+
+.chip:not(:empty) {
+  flex: none;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid rgb(var(--tone-rgb) / 0.5);
+  border-radius: var(--radius-pill);
+  background: rgb(var(--tone-rgb) / 0.1);
+  color: var(--tone);
+  font-family: var(--font-display);
+  font-size: calc(0.62rem * var(--display-size));
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.chip[data-state='waiting_permission'] {
+  animation: attn-chip 1.1s ease-in-out infinite;
+}
+
+@keyframes attn-chip {
+  50% {
+    background: rgb(var(--tone-rgb) / 0.35);
+    box-shadow: 0 0 calc(14px * var(--glow)) rgb(var(--tone-rgb) / 0.6);
+  }
+}
+
+.theme-btn {
+  font-family: var(--font-display);
+  font-size: calc(0.75rem * var(--display-size));
+}
+
+/* ── live card states ───────────────────────────────── */
+
+.sc::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgb(var(--tone-rgb) / 0);
+}
+
+.sc[data-state='waiting_permission'] {
+  border-color: rgb(var(--tone-rgb) / 0.6);
+}
+
+.sc[data-state='waiting_permission']::after {
+  animation: attn 1.1s ease-in-out infinite;
+}
+
+@keyframes attn {
+  50% {
+    box-shadow:
+      inset 0 0 0 2px rgb(var(--tone-rgb) / 0.9),
+      inset 0 0 calc(28px * var(--glow)) rgb(var(--tone-rgb) / 0.22);
+  }
+}
+
+.sc[data-state='working'] .sc-dot {
+  animation: breathe 1.3s ease-in-out infinite;
+}
+
+.sc[data-state='waiting_permission'] .sc-dot {
+  animation: blink 0.55s steps(1) infinite;
+}
+
+.sc[data-state='done'] {
+  border-color: rgb(var(--tone-rgb) / 0.35);
+}
+
+@keyframes breathe {
+  50% {
+    transform: scale(1.6);
+    box-shadow: 0 0 calc(14px * var(--glow)) var(--tone);
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.15;
+  }
+}
+
+/* ── one-shot effects (fx/director.ts) ──────────────── */
+
+.fx-attn {
+  animation: nudge 520ms var(--ease-spring);
+}
+
+@keyframes nudge {
+  20% {
+    transform: translateX(-5px) rotate(-0.6deg);
+  }
+  45% {
+    transform: translateX(4px) rotate(0.4deg);
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+}
+
+.screen.fx-attn {
+  animation: screen-attn 900ms ease-out;
+}
+
+@keyframes screen-attn {
+  from {
+    box-shadow:
+      inset 0 0 0 2px var(--warn),
+      inset 0 0 40px rgb(var(--warn-rgb) / 0.35);
+  }
+}
+
+.fx-glitch {
+  animation: glitch 480ms steps(1) both;
+}
+
+@keyframes glitch {
+  0% {
+    transform: translate(-4px, 1px);
+    filter: hue-rotate(90deg) saturate(2.5);
+    clip-path: inset(8% 0 62% 0);
+  }
+  12% {
+    transform: translate(5px, -1px);
+    clip-path: inset(48% 0 22% 0);
+  }
+  24% {
+    transform: translate(-2px, 2px);
+    filter: hue-rotate(-70deg) contrast(1.5);
+    clip-path: inset(0 0 84% 0);
+  }
+  36% {
+    transform: translate(3px, 0);
+    clip-path: inset(70% 0 6% 0);
+  }
+  48% {
+    transform: translate(-5px, -2px);
+    filter: invert(0.2) hue-rotate(30deg);
+    clip-path: inset(28% 0 42% 0);
+  }
+  60% {
+    transform: translate(2px, 1px);
+    clip-path: none;
+    filter: hue-rotate(40deg);
+  }
+  80% {
+    transform: translate(-1px, 0);
+    filter: none;
+  }
+  100% {
+    transform: none;
+    filter: none;
+    clip-path: none;
+  }
+}
+
+/* tool sweep across the terminal */
+.screen::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--scan, var(--accent)) 30%,
+    var(--scan, var(--accent)) 70%,
+    transparent
+  );
+  box-shadow: 0 0 calc(12px * var(--glow)) var(--scan, var(--accent));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.screen.fx-scan::after {
+  animation: scan 620ms cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@keyframes scan {
+  from {
+    opacity: 0.85;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(var(--scan-h, 300px));
+  }
+}
+
+/* ── CRT: scanlines + vignette over everything ──────── */
+
+html[data-scanlines] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.24) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 58%, rgb(0 0 0 / 0.55) 100%);
+}
+
+html[data-scanlines][data-quality='high']:not([data-fx='reduced']) body::after {
+  animation: flicker 5s linear infinite;
+}
+
+@keyframes flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  47% {
+    opacity: 0.93;
+  }
+  48% {
+    opacity: 1;
+  }
+  73% {
+    opacity: 0.96;
+  }
+}
+
+html[data-theme='crt'] .bar,
+html[data-theme='crt'] .dash,
+html[data-theme='crt'] .login,
+html[data-theme='crt'] .sheet {
+  text-shadow: 0 0 5px rgb(var(--accent-rgb) / 0.45);
+}
+
+/* Single-weight pixel fonts: no smeared faux bold. */
+html[data-theme='crt'],
+html[data-theme='pixel'] {
+  font-synthesis: none;
+}
+
+/* VT323 is small for its size */
+html[data-theme='crt'] body {
+  font-size: 1.15rem;
+}
+
+/* ── Pixel: display font, square corners, hard shadows ── */
+
+html[data-theme='pixel'] .brand,
+html[data-theme='pixel'] .dash-head h1,
+html[data-theme='pixel'] .sheet h2,
+html[data-theme='pixel'] .label,
+html[data-theme='pixel'] .btn,
+html[data-theme='pixel'] .login-card h1,
+html[data-theme='pixel'] .panel-title {
+  font-family: var(--font-display);
+  font-size: calc(0.95rem * var(--display-size));
+  line-height: 1.5;
+}
+
+html[data-theme='pixel'] .badge {
+  font-family: var(--font-display);
+  font-size: 0.5rem;
+  line-height: 1.6;
+}
+
+html[data-theme='pixel'] .sc,
+html[data-theme='pixel'] .btn,
+html[data-theme='pixel'] .k,
+html[data-theme='pixel'] .sheet,
+html[data-theme='pixel'] .compose-input,
+html[data-theme='pixel'] .compose-send {
+  border-width: 2px;
+}
+
+html[data-theme='pixel'] .k,
+html[data-theme='pixel'] .btn {
+  box-shadow: 3px 3px 0 rgb(0 0 0 / 0.45);
+}
+
+html[data-theme='pixel'] .k.down,
+html[data-theme='pixel'] .btn:active {
+  box-shadow: none;
+  transform: translate(3px, 3px);
+}
+
+html[data-theme='pixel'] .sc::before {
+  width: 4px;
+  box-shadow: none;
+}
+
+html[data-theme='pixel'] .sc-dot {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* ── settings sheet ─────────────────────────────────── */
+
+.settings form {
+  gap: 1.1rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+}
+
+.theme-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.theme-card {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+  padding: 0.65rem 0.6rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--tc-bg);
+  color: var(--tc-fg);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    transform 160ms var(--ease-out),
+    box-shadow 150ms ease;
+}
+
+.theme-card:active {
+  transform: scale(0.97);
+}
+
+.theme-card[aria-checked='true'] {
+  border-color: var(--tc-accent);
+  box-shadow:
+    0 0 0 1px var(--tc-accent),
+    0 0 16px color-mix(in srgb, var(--tc-accent) 40%, transparent);
+}
+
+.tc-name {
+  font-family: var(--tc-font);
+  font-size: calc(0.85rem * var(--tc-size));
+  font-weight: 600;
+  color: var(--tc-accent);
+}
+
+.tc-tag {
+  font-size: 0.62rem;
+  opacity: 0.7;
+}
+
+.tc-swatches {
+  display: flex;
+  gap: 3px;
+}
+
+.tc-swatches i {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.seg button {
+  padding: 0.4rem 0.7rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.seg button + button {
+  border-left: 1px solid var(--line-2);
+}
+
+.seg button[aria-checked='true'] {
+  background: rgb(var(--accent-rgb) / 0.15);
+  color: var(--accent);
+}
+
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch .track {
+  position: relative;
+  width: 2.2rem;
+  height: 1.25rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.switch .track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(1.25rem - 6px);
+  height: calc(1.25rem - 6px);
+  border-radius: var(--radius-pill);
+  background: var(--muted);
+  transition:
+    transform 200ms var(--ease-spring),
+    background 160ms ease;
+}
+
+.switch input:checked + .track {
+  border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.18);
+}
+
+.switch input:checked + .track::after {
+  transform: translateX(0.95rem);
+  background: var(--accent);
+}
+
+.switch input:focus-visible + .track {
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.25);
+}
+
+input[type='range'] {
+  flex: 1;
+  min-width: 8rem;
+  accent-color: var(--accent);
+}
+
+input[type='range']:disabled {
+  opacity: 0.4;
+}
+
+.try {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.login-card {
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgb(var(--bg-rgb) / 0.82);
+  box-shadow: var(--card-shadow);
+}
+
+/* ── reduced effects: no motion loops, colors stay ──── */
+
+html[data-fx='reduced'] .sc[data-state='waiting_permission']::after {
+  animation: none;
+  box-shadow: inset 0 0 0 2px rgb(var(--tone-rgb) / 0.9);
+}
+
+html[data-fx='reduced'] .sc-dot,
+html[data-fx='reduced'] .chip,
+html[data-fx='reduced'] .fx-attn {
+  animation: none !important;
+}
+
+@media (max-width: 30rem) {
+  .theme-btn {
+    padding-inline: 0.5rem;
+  }
+
+  #app[data-view='term'] .meta {
+    display: none;
+  }
+}

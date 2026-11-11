@@ -2,6 +2,7 @@ import type { TerminalMessage, TermSize } from '@ccc/shared';
 import type { Connection } from '../connection';
 import { el, toast } from '../dom';
 import { createTerminal, DEFAULT_FONT_SIZE, MAX_FONT_SIZE, MIN_FONT_SIZE } from '../terminal';
+import { currentTheme, type Theme } from '../themes';
 import { isKeyboardOpen } from '../viewport';
 import { Compose } from './compose';
 import { KeyBar } from './keybar';
@@ -21,6 +22,8 @@ export type InputMode = 'term' | 'compose';
 /** One xterm reused for whichever session is attached, plus the key bar and Compose box. */
 export class TerminalView {
   readonly root: HTMLElement;
+  /** Terminal area (effects anchor on it). */
+  readonly screen: HTMLElement;
   private readonly host: HTMLElement;
   private readonly overlay: HTMLElement;
   private readonly exitText: HTMLElement;
@@ -33,6 +36,7 @@ export class TerminalView {
   private resizeTimer = 0;
   private mode: InputMode = localStorage.getItem(MODE_KEY) === 'compose' ? 'compose' : 'term';
   private fontSize = clampFont(Number(localStorage.getItem(FONT_KEY)) || DEFAULT_FONT_SIZE);
+  private fontScale = currentTheme().termFontScale;
 
   constructor(
     private readonly conn: Connection,
@@ -58,15 +62,17 @@ export class TerminalView {
       toggleMode: () => this.setMode(this.mode === 'term' ? 'compose' : 'term', true),
       toggleKeyboard: () => this.toggleKeyboard(),
     });
+    this.screen = el('div', { class: 'screen' }, this.host, this.overlay);
     this.root = el(
       'div',
       { class: 'stage' },
-      el('div', { class: 'screen' }, this.host, this.overlay),
+      this.screen,
       this.compose.root,
       this.keybar.root,
     );
 
-    this.view = createTerminal(this.host, this.fontSize);
+    const theme = currentTheme();
+    this.view = createTerminal(this.host, this.scaledFont(), theme.xterm, theme.termFont);
     const { term } = this.view;
     term.onData((data) => {
       if (!this.sessionId) return;
@@ -130,8 +136,20 @@ export class TerminalView {
     if (next === this.fontSize) return;
     this.fontSize = next;
     localStorage.setItem(FONT_KEY, String(next));
-    this.view.setFontSize(next);
+    this.view.setFontSize(this.scaledFont());
     requestAnimationFrame(() => this.syncSize());
+  }
+
+  /** Call after the theme's fonts loaded: xterm measures the font when it is set. */
+  setTheme(theme: Theme): void {
+    this.fontScale = theme.termFontScale;
+    this.view.setAppearance(theme.xterm, theme.termFont);
+    this.view.setFontSize(this.scaledFont());
+    requestAnimationFrame(() => this.syncSize());
+  }
+
+  private scaledFont(): number {
+    return Math.round(this.fontSize * this.fontScale);
   }
 
   handle(msg: TerminalMessage): void {

@@ -1,3 +1,4 @@
+import { audio } from '../audio/engine';
 import { buzz, el, keepFocus } from '../dom';
 
 const REPEAT_DELAY_MS = 380;
@@ -100,6 +101,7 @@ function press(btn: HTMLButtonElement, fire: () => void, repeat: boolean, onRele
     down = true;
     btn.classList.add('down');
     buzz();
+    audio.play('key');
     if (onRelease) return;
     fire();
     if (repeat) delay = window.setTimeout(() => (interval = window.setInterval(fire, REPEAT_MS)), REPEAT_DELAY_MS);

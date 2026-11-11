@@ -32,9 +32,16 @@ export class Dashboard {
   private sessions: SessionInfo[] = [];
   private favorites: Favorite[] = [];
   private readonly dialog: SessionDialog;
+  private readonly themeBtn: HTMLButtonElement;
+  private cycleTheme: () => void = () => undefined;
 
   constructor(private readonly open: (id: string) => void) {
     this.dialog = new SessionDialog();
+    this.themeBtn = el('button', {
+      class: 'btn btn-sm ghost theme-btn',
+      title: 'Next theme',
+      onclick: () => this.cycleTheme(),
+    });
     this.grid = el('div', { class: 'grid' });
     this.empty = el(
       'div',
@@ -52,6 +59,7 @@ export class Dashboard {
         el('h1', {}, 'Sessions'),
         el('span', { class: 'count', 'data-ref': 'count' }),
         el('span', { class: 'spacer' }),
+        this.themeBtn,
         el('button', { class: 'btn btn-sm', onclick: () => this.create() }, '+ New'),
       ),
       this.grid,
@@ -59,6 +67,16 @@ export class Dashboard {
       this.dialog.root,
     );
     setInterval(() => this.refreshTimes(), 15_000);
+  }
+
+  /** One-tap theme switch in the header. */
+  setThemeCycler(fn: () => void): void {
+    this.cycleTheme = fn;
+  }
+
+  setThemeName(name: string): void {
+    this.themeBtn.textContent = `◆ ${name}`;
+    this.themeBtn.setAttribute('aria-label', `Theme: ${name}. Tap for next`);
   }
 
   async loadFavorites(): Promise<void> {
@@ -124,7 +142,7 @@ export class Dashboard {
     const rename = el('button', { class: 'icon-btn', title: 'Rename', 'aria-label': 'Rename' }, '✎');
     const root = el(
       'article',
-      { class: 'sc', tabIndex: 0, role: 'button', 'aria-label': `Open ${s.name}` },
+      { class: 'sc', 'data-id': s.id, tabIndex: 0, role: 'button', 'aria-label': `Open ${s.name}` },
       el('div', { class: 'sc-top' }, el('i', { class: 'sc-dot' }), refs.name, refs.state, rename, refs.kill),
       refs.path,
       refs.activity,
@@ -132,6 +150,11 @@ export class Dashboard {
       refs.meta,
     );
 
+    // Entry animation only while entering, so effect animations can use the card later.
+    root.classList.add('enter');
+    root.addEventListener('animationend', (e) => {
+      if (e.target === root && e.animationName === 'card-in') root.classList.remove('enter');
+    });
     root.addEventListener('click', () => this.open(s.id));
     root.addEventListener('keydown', (e) => {
       if (e.target === root && (e.key === 'Enter' || e.key === ' ')) this.open(s.id);

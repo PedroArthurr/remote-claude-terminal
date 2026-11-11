@@ -101,3 +101,21 @@ The hook is registered `async` (never blocks Claude) and is a no-op unless `CCC_
 State rules: prompt → `working`; `PermissionRequest` / permission notification → `permission`; answering it from the cockpit (`1`-`9`, `y`, `n`, `Enter`, `Esc`) → `working`; `Stop` → `done`; `StopFailure` → `error`. Esc / Ctrl+C has no hook: if Claude's spinner line disappears right after, the session goes `idle`.
 
 Every event is appended to `data/events.db` (SQLite, `node:sqlite`); the stats screen derives everything from it.
+
+## Themes, effects and sound
+
+Header `⚙` (sliders icon) opens **Look & sound**; `◆ <theme>` on the dashboard switches theme in one tap. Choices are stored per device.
+
+| theme | look | background | celebration | sounds |
+|---|---|---|---|---|
+| Neon | cyberpunk, cyan/magenta | synthwave sun + scrolling grid | sparks | futuristic synth |
+| CRT | green phosphor, VT323, scanlines | rolling band + oscilloscope trace | phosphor bloom | ambient / analog |
+| Pixel | RPG night, Press Start 2P | pixel sky, stars, parallax hills | pixel fountain + coins | 8-bit |
+
+Themes are data (`web/src/themes/*.ts`): CSS variables, fonts, xterm colors, backdrop, burst style, sound pack.
+
+Effects follow hook activity: prompt → pulse ring; tool call → spark on the card / sweep across the terminal (color by tool family, pitch by tool family); permission → card blinks, nudge, vibration; done → themed burst + vibration; error → glitch. The background speeds up while something works and turns to the warning color while a permission waits. Events of other sessions while you are in a terminal show as a toast.
+
+Sounds are synthesized with WebAudio (no files) and unlock on the first tap. Mute: speaker icon in the header.
+
+Performance: quality Low / Med / High caps frame rate (15/30/60 fps) and resolution; **Reduce** stops the animated background, particles and glitches (colors and sounds stay). The background sleeps while a terminal is open or the tab is hidden; particles only run while visible. Phones default to Med; `prefers-reduced-motion` defaults to Reduce. **Try** buttons preview each effect.

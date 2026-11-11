@@ -4,34 +4,6 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import type { TermSize } from '@ccc/shared';
 import '@xterm/xterm/css/xterm.css';
 
-// Default look until themes land (Marco 5).
-const THEME: ITheme = {
-  background: '#0b0d12',
-  foreground: '#d7dce6',
-  cursor: '#5cf2c8',
-  cursorAccent: '#0b0d12',
-  selectionBackground: '#5cf2c840',
-  scrollbarSliderBackground: '#ffffff14',
-  scrollbarSliderHoverBackground: '#ffffff26',
-  scrollbarSliderActiveBackground: '#5cf2c840',
-  black: '#1b1f2a',
-  red: '#ff5c7a',
-  green: '#5cf2a0',
-  yellow: '#ffc857',
-  blue: '#6aa8ff',
-  magenta: '#c792ea',
-  cyan: '#5ce1f2',
-  white: '#d7dce6',
-  brightBlack: '#4a5266',
-  brightRed: '#ff8099',
-  brightGreen: '#8af7c0',
-  brightYellow: '#ffd98a',
-  brightBlue: '#94c0ff',
-  brightMagenta: '#dab3f5',
-  brightCyan: '#8aeaf7',
-  brightWhite: '#ffffff',
-};
-
 export interface TermView {
   term: Terminal;
   /** Size that would fill the container, or null if it is not laid out. */
@@ -39,6 +11,8 @@ export interface TermView {
   /** Redraw everything (after being hidden, or a new snapshot). */
   repaint(): void;
   setFontSize(px: number): void;
+  /** Colors and font (theme switch). */
+  setAppearance(theme: ITheme, fontFamily: string): void;
 }
 
 const COARSE = matchMedia('(pointer: coarse)').matches;
@@ -51,14 +25,14 @@ export const MAX_FONT_SIZE = 24;
 // The DOM renderer is plenty for a phone screen.
 const USE_WEBGL = matchMedia('(pointer: fine)').matches;
 
-export function createTerminal(host: HTMLElement, fontSize = DEFAULT_FONT_SIZE): TermView {
+export function createTerminal(host: HTMLElement, fontSize: number, theme: ITheme, fontFamily: string): TermView {
   const term = new Terminal({
-    fontFamily: "'Cascadia Code', 'JetBrains Mono', Consolas, ui-monospace, monospace",
+    fontFamily,
     fontSize,
     cursorBlink: true,
     scrollback: 10_000, // >= server scrollback, so snapshots fit
     allowProposedApi: true,
-    theme: THEME,
+    theme,
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
@@ -83,6 +57,11 @@ export function createTerminal(host: HTMLElement, fontSize = DEFAULT_FONT_SIZE):
     },
     setFontSize(px) {
       term.options.fontSize = px;
+    },
+    setAppearance(t, family) {
+      term.options.theme = t;
+      term.options.fontFamily = family;
+      this.repaint();
     },
   };
 }

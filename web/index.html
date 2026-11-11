@@ -3,11 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#0b0d12" />
+    <meta name="theme-color" content="#07060f" />
     <title>cc-cockpit</title>
+    <script>
+      // Paint the saved theme before the app loads (see themes/index.ts).
+      try {
+        var p = JSON.parse(localStorage.getItem('ccc.themePaint') || 'null');
+        if (p) {
+          var r = document.documentElement;
+          for (var k in p.vars) r.style.setProperty(k, p.vars[k]);
+          r.dataset.theme = p.id;
+          if (p.scanlines) r.setAttribute('data-scanlines', '');
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', p.vars['--bg']);
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
+    <canvas id="fx-bg" aria-hidden="true"></canvas>
     <div id="app"></div>
+    <canvas id="fx-top" aria-hidden="true"></canvas>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

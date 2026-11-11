@@ -64,3 +64,21 @@ export function toast(msg: string, kind: 'info' | 'bad' = 'info'): void {
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => t.classList.remove('show'), 2800);
 }
+
+const ICONS = {
+  sound:
+    '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  mute: '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z" fill="currentColor"/><path d="M15.5 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  sliders:
+    '<path d="M4 7h9m4 0h3M4 12h3m4 0h9M4 17h11m4 0h1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="15" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="12" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="17" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/>',
+} as const;
+
+/** Inline SVG icon (static markup only). */
+export function icon(name: keyof typeof ICONS): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('ico');
+  svg.innerHTML = ICONS[name];
+  return svg;
+}
