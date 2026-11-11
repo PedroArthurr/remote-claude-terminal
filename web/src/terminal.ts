@@ -36,7 +36,13 @@ export interface TermView {
   term: Terminal;
   /** Size that would fill the container, or null if it is not laid out. */
   preferredSize(): TermSize | null;
+  /** Redraw everything (after being hidden, or a new snapshot). */
+  repaint(): void;
 }
+
+// Mobile GPUs drop or stall the WebGL context while the view is hidden, leaving a blank terminal.
+// The DOM renderer is plenty for a phone screen.
+const USE_WEBGL = matchMedia('(pointer: fine)').matches;
 
 export function createTerminal(host: HTMLElement): TermView {
   const term = new Terminal({
@@ -51,7 +57,7 @@ export function createTerminal(host: HTMLElement): TermView {
   term.loadAddon(fit);
   muteQueryReplies(term);
   term.open(host);
-  loadWebgl(term);
+  const webgl = USE_WEBGL ? loadWebgl(term) : null;
 
   return {
     term,
@@ -60,16 +66,28 @@ export function createTerminal(host: HTMLElement): TermView {
       if (!d || !Number.isFinite(d.cols) || !Number.isFinite(d.rows)) return null;
       return { cols: Math.max(2, d.cols), rows: Math.max(2, d.rows) };
     },
+    repaint() {
+      try {
+        webgl?.clearTextureAtlas();
+      } catch {
+        // Disposed after a context loss.
+      }
+      term.refresh(0, term.rows - 1);
+    },
   };
 }
 
-function loadWebgl(term: Terminal): void {
+function loadWebgl(term: Terminal): WebglAddon | null {
   try {
     const webgl = new WebglAddon();
-    webgl.onContextLoss(() => webgl.dispose()); // falls back to the DOM renderer
+    webgl.onContextLoss(() => {
+      webgl.dispose(); // falls back to the DOM renderer
+      term.refresh(0, term.rows - 1);
+    });
     term.loadAddon(webgl);
+    return webgl;
   } catch {
-    // No WebGL2: DOM renderer.
+    return null; // No WebGL2: DOM renderer.
   }
 }
 

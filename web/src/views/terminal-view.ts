@@ -92,6 +92,8 @@ export class TerminalView {
         term.write('\x1bc', () => term.resize(msg.cols, msg.rows));
         term.write(msg.data, () => {
           this.root.classList.remove('loading');
+          this.view.repaint();
+          this.onSize(`${term.cols}×${term.rows}`);
           this.syncSize(true);
         });
         this.setRunning(msg.running, null);
