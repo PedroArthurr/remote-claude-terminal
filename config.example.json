@@ -11,5 +11,6 @@
   ],
   "token": "replace-with-a-long-random-token",
   "hookSecret": "replace-with-another-long-random-secret",
-  "dataDir": "./data"
+  "dataDir": "./data",
+  "scrollback": 5000
 }

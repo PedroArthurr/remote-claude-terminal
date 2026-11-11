@@ -19,7 +19,11 @@ export interface Config {
   token: string;
   hookSecret: string;
   dataDir: string;
+  /** Lines kept by each session's virtual terminal (and sent in snapshots). */
+  scrollback: number;
 }
+
+const DEFAULT_SCROLLBACK = 5000;
 
 const FORBIDDEN_HOSTS = new Set(['0.0.0.0', '::', '[::]', '']);
 
@@ -65,6 +69,11 @@ function validate(c: Partial<Config>): Config {
   // Never listen on all interfaces (see CLAUDE.md, item 7).
   if (typeof c.host === 'string' && FORBIDDEN_HOSTS.has(c.host.trim())) {
     errors.push(`host: "${c.host}" is forbidden; use 127.0.0.1 or the Tailscale IP`);
+  }
+  if (c.scrollback === undefined) c.scrollback = DEFAULT_SCROLLBACK;
+  else if (!Number.isInteger(c.scrollback) || c.scrollback < 0) errors.push('scrollback: expected integer >= 0');
+  if (typeof c.defaultCwd === 'string' && !existsSync(c.defaultCwd)) {
+    errors.push(`defaultCwd: folder not found: ${c.defaultCwd}`);
   }
   if (errors.length) throw new Error(`Invalid config:\n  ${errors.join('\n  ')}`);
   return c as Config;
