@@ -30,6 +30,9 @@ body {
   color: var(--fg);
   font-family: var(--font);
   -webkit-tap-highlight-color: transparent;
+  /* no pull-to-refresh, no double-tap zoom */
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 button {
@@ -37,8 +40,13 @@ button {
   color: inherit;
 }
 
+/* Follows the visual viewport (see viewport.ts) so bottom controls sit right above the keyboard. */
 #app {
-  height: 100dvh;
+  position: fixed;
+  top: var(--vvt, 0px);
+  left: 0;
+  right: 0;
+  height: var(--vvh, 100dvh);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -121,8 +129,22 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-#app:not([data-view='term']) .meta {
+#app:not([data-view='term']) .meta,
+#app:not([data-view='term']) .zoom {
   display: none;
+}
+
+.zoom {
+  display: inline-flex;
+  gap: 0.15rem;
+}
+
+.zoom .icon-btn {
+  min-width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  font-size: 0.72rem;
+  letter-spacing: -0.02em;
 }
 
 .status {
@@ -171,6 +193,7 @@ button {
 /* ── views (stacked; one visible) ────────────────────── */
 
 .views {
+  grid-row: 2; /* stays in the 1fr track when the bar is hidden */
   display: grid;
   /* minmax(0, …): the xterm canvas must not widen the column */
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
@@ -208,8 +231,16 @@ button {
 /* ── terminal ────────────────────────────────────────── */
 
 .stage {
-  position: relative;
+  display: grid;
+  /* minmax(0, …): the xterm canvas must not widen the column */
+  grid-template: minmax(0, 1fr) auto auto / minmax(0, 1fr);
   height: 100%;
+}
+
+.screen {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
   padding: 0.4rem 0.2rem 0.2rem 0.55rem;
 }
 
@@ -231,6 +262,240 @@ button {
 .stage.loading .term {
   opacity: 0;
   transition: none;
+}
+
+/* ── key bar ─────────────────────────────────────────── */
+
+.keybar {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+  padding: 6px max(6px, calc((100% - 60rem) / 2));
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.k {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--panel-2), var(--bg));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.04),
+    0 1px 0 rgb(0 0 0 / 0.5);
+  color: var(--fg);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    transform 140ms var(--ease-out),
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 200ms ease,
+    color 160ms ease;
+}
+
+.k-tool {
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.k-danger {
+  color: var(--bad);
+}
+
+.k-enter {
+  border-color: rgb(var(--accent-rgb) / 0.45);
+  color: var(--accent);
+  font-size: 1rem;
+}
+
+.k.on {
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  background: rgb(var(--accent-rgb) / 0.12);
+  color: var(--accent);
+}
+
+/* press: snap in, ease out on release */
+.k.down {
+  transform: translateY(1px) scale(0.94);
+  border-color: rgb(var(--accent-rgb) / 0.7);
+  background: rgb(var(--accent-rgb) / 0.2);
+  box-shadow: 0 0 14px rgb(var(--accent-rgb) / 0.35);
+  color: var(--accent);
+  transition-duration: 0s;
+}
+
+.k-danger.down {
+  border-color: rgb(var(--bad-rgb) / 0.7);
+  background: rgb(var(--bad-rgb) / 0.2);
+  box-shadow: 0 0 14px rgb(var(--bad-rgb) / 0.35);
+  color: var(--bad);
+}
+
+@media (pointer: fine) {
+  .k-kb {
+    display: none;
+  }
+}
+
+@media (min-width: 48rem) {
+  .keybar {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  .k {
+    height: 2.2rem;
+  }
+
+  .k-tool {
+    order: -1;
+  }
+}
+
+/* ── compose ─────────────────────────────────────────── */
+
+.compose {
+  display: none;
+  gap: 6px;
+  padding: 6px max(6px, calc((100% - 60rem) / 2)) 0;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.stage[data-mode='compose'] .compose {
+  display: grid;
+  animation: compose-in 240ms var(--ease-out);
+}
+
+@keyframes compose-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.snips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.snips::-webkit-scrollbar {
+  display: none;
+}
+
+.snips:empty {
+  display: none;
+}
+
+.snip {
+  flex: none;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--line-2);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease;
+}
+
+.snip:hover,
+.snip:active {
+  border-color: rgb(var(--accent-rgb) / 0.5);
+  background: rgb(var(--accent-rgb) / 0.08);
+  color: var(--fg);
+}
+
+.compose-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 6px;
+}
+
+.compose-input {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  max-height: 9.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px; /* no zoom-on-focus */
+  line-height: 1.35;
+  resize: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.compose-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.15);
+  outline: none;
+}
+
+.compose-send {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: rgb(var(--accent-rgb) / 0.12);
+  color: var(--accent);
+  font-size: 1.05rem;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    box-shadow 150ms ease,
+    transform 140ms var(--ease-out);
+}
+
+.compose-send:hover,
+.compose-send:focus-visible {
+  background: rgb(var(--accent-rgb) / 0.2);
+  box-shadow: 0 0 14px rgb(var(--accent-rgb) / 0.3);
+  outline: none;
+}
+
+.compose-send:active {
+  transform: scale(0.93);
+}
+
+.sent {
+  animation: sent 460ms var(--ease-out);
+}
+
+@keyframes sent {
+  30% {
+    border-color: var(--accent);
+    background: rgb(var(--accent-rgb) / 0.3);
+    box-shadow: 0 0 20px rgb(var(--accent-rgb) / 0.55);
+    color: var(--accent);
+  }
 }
 
 /* process-exited overlay */
@@ -868,6 +1133,17 @@ input[type='password']:focus {
   transform: translate(-50%, 0);
 }
 
+/* bottom is taken by the key bar there */
+#app[data-view='term'] ~ .toast {
+  top: calc(3.3rem + env(safe-area-inset-top));
+  bottom: auto;
+  transform: translate(-50%, -12px);
+}
+
+#app[data-view='term'] ~ .toast.show {
+  transform: translate(-50%, 0);
+}
+
 .toast[data-kind='bad'] {
   border-color: rgb(var(--bad-rgb) / 0.5);
   color: var(--bad);
@@ -892,6 +1168,13 @@ input[type='password']:focus {
 
   #app[data-view='term'] .brand,
   .status span {
+    display: none;
+  }
+}
+
+/* Keyboard up on a short screen: every row counts, the header steps aside. */
+@media (max-height: 34rem) and (pointer: coarse) {
+  html[data-kb='open'] #app[data-view='term'] .bar {
     display: none;
   }
 }

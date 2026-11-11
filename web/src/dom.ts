@@ -20,6 +20,21 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/** Tapping `node` must not move focus (that would close the on-screen keyboard). */
+export function keepFocus<T extends HTMLElement>(node: T): T {
+  node.addEventListener('mousedown', (e) => e.preventDefault());
+  return node;
+}
+
+/** Short haptic tick where supported (Android). */
+export function buzz(ms = 8): void {
+  try {
+    navigator.vibrate?.(ms);
+  } catch {
+    // Blocked without user activation; harmless.
+  }
+}
+
 export function relTime(ms: number): string {
   const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
   if (s < 60) return 'now';

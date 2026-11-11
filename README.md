@@ -26,6 +26,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 | `startupCommand` | Typed into each new shell (default `claude`). |
 | `token` | Access token for browsers (≥ 32 chars). |
 | `hookSecret` | Secret for the local hook endpoint (≥ 32 chars). |
+| `snippets` | Compose-mode one-tap messages (default `["/clear", "/compact", "continue"]`). |
 
 ## Run
 
@@ -78,3 +79,12 @@ Changing `token` in `config.json` signs every device out. Failed attempts are ra
 The dashboard lists every session (name, folder, state, last lines of the screen). **+ New** starts a shell in one of the favorite folders and runs `startupCommand`. Tap a card to open its terminal; `‹` (or Android back) returns. ✎ renames; ✕ twice kills.
 
 Sessions live in the server process: closing the tab or losing signal does not affect them. Each PTY gets `CCC_SESSION_ID` in its environment.
+
+## Phone input
+
+Bottom of the terminal, always above the on-screen keyboard:
+
+- **Key bar:** `esc` `tab` `⇧tab` (Claude mode) `^C` arrows (hold to repeat) `1` `2` `3` `y` `n` `⏎`. Approving a permission = `1`/`2`/`3` or arrows + `⏎`.
+- **✎** toggles **Compose**: a multi-line box (keyboard voice dictation works) and `➤` sends it as a paste followed by Enter. Empty box + `➤` = Enter. `Ctrl+Enter` sends on desktop. Drafts are kept per session. Chips above the box are the `snippets` and send in one tap.
+- **⌨** shows/hides the keyboard. In Terminal mode a tap on the screen also opens it; dragging only scrolls.
+- **A− / A+** in the header change the font size (remembered per device). The server resizes the PTY to match.

@@ -10,6 +10,7 @@ import {
   type HealthResponse,
   type RenameSessionRequest,
   type SessionInfo,
+  type UiConfig,
 } from '@ccc/shared';
 import { createAuth } from './auth';
 import { loadConfig } from './config';
@@ -54,6 +55,10 @@ app.get(API.health, (_req, res) => {
 
 app.get(API.favorites, (_req, res) => {
   res.json(config.favorites satisfies Favorite[]);
+});
+
+app.get(API.ui, (_req, res) => {
+  res.json({ snippets: config.snippets } satisfies UiConfig);
 });
 
 app.get(API.sessions, (_req, res) => {

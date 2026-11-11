@@ -1,7 +1,9 @@
 import type { ServerMessage } from '@ccc/shared';
 import { api } from './api';
 import { Connection, type ConnState } from './connection';
-import { el, toast } from './dom';
+import { el, keepFocus, toast } from './dom';
+import { trackViewport } from './viewport';
+import { pruneDrafts } from './views/compose';
 import { Dashboard } from './views/dashboard';
 import { LoginView } from './views/login';
 import { TerminalView } from './views/terminal-view';
@@ -14,6 +16,12 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 const title = el('span', { class: 'title' });
 const size = el('span', { class: 'meta' });
 const connText = el('span', {}, 'connecting');
+const zoom = el(
+  'span',
+  { class: 'zoom' },
+  keepFocus(el('button', { class: 'icon-btn', title: 'Smaller text', 'aria-label': 'Smaller text', onclick: () => terminal.zoom(-1) }, 'A−')),
+  keepFocus(el('button', { class: 'icon-btn', title: 'Larger text', 'aria-label': 'Larger text', onclick: () => terminal.zoom(1) }, 'A+')),
+);
 const back = el('button', { class: 'back', 'aria-label': 'Back to sessions', onclick: () => go({ view: 'dash' }) }, '‹');
 
 const conn = new Connection({ onMessage, onState });
@@ -29,6 +37,7 @@ app.append(
     el('span', { class: 'brand', onclick: () => go({ view: 'dash' }) }, 'cc', el('b', {}, '-'), 'cockpit'),
     title,
     el('span', { class: 'spacer' }),
+    zoom,
     size,
     el('span', { class: 'status' }, el('i', { class: 'dot' }), connText),
   ),
@@ -41,6 +50,7 @@ app.append(
   ),
 );
 setView('boot');
+trackViewport();
 
 addEventListener('hashchange', () => route());
 void boot();
@@ -58,7 +68,13 @@ async function start(): Promise<void> {
   conn.connect();
   setView('dash');
   route();
-  await dashboard.loadFavorites().catch(() => undefined);
+  await Promise.all([
+    dashboard.loadFavorites().catch(() => undefined),
+    api
+      .ui()
+      .then((ui) => terminal.setSnippets(ui.snippets))
+      .catch(() => undefined),
+  ]);
 }
 
 function showLogin(): void {
@@ -129,6 +145,7 @@ function onMessage(msg: ServerMessage): void {
   switch (msg.type) {
     case 'sessions':
       dashboard.update(msg.sessions);
+      pruneDrafts(new Set(msg.sessions.map((s) => s.id)));
       updateTitle();
       break;
     case 'closed':

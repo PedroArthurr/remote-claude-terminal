@@ -38,16 +38,23 @@ export interface TermView {
   preferredSize(): TermSize | null;
   /** Redraw everything (after being hidden, or a new snapshot). */
   repaint(): void;
+  setFontSize(px: number): void;
 }
+
+const COARSE = matchMedia('(pointer: coarse)').matches;
+// Phones: small enough for ~55 columns on a 400px-wide screen, Claude Code's layout needs width.
+export const DEFAULT_FONT_SIZE = COARSE ? 12 : 14;
+export const MIN_FONT_SIZE = 8;
+export const MAX_FONT_SIZE = 24;
 
 // Mobile GPUs drop or stall the WebGL context while the view is hidden, leaving a blank terminal.
 // The DOM renderer is plenty for a phone screen.
 const USE_WEBGL = matchMedia('(pointer: fine)').matches;
 
-export function createTerminal(host: HTMLElement): TermView {
+export function createTerminal(host: HTMLElement, fontSize = DEFAULT_FONT_SIZE): TermView {
   const term = new Terminal({
     fontFamily: "'Cascadia Code', 'JetBrains Mono', Consolas, ui-monospace, monospace",
-    fontSize: 14,
+    fontSize,
     cursorBlink: true,
     scrollback: 10_000, // >= server scrollback, so snapshots fit
     allowProposedApi: true,
@@ -73,6 +80,9 @@ export function createTerminal(host: HTMLElement): TermView {
         // Disposed after a context loss.
       }
       term.refresh(0, term.rows - 1);
+    },
+    setFontSize(px) {
+      term.options.fontSize = px;
     },
   };
 }

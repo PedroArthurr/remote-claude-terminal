@@ -6,6 +6,7 @@ import {
   type Favorite,
   type RenameSessionRequest,
   type SessionInfo,
+  type UiConfig,
 } from '@ccc/shared';
 
 export class HttpError extends Error {
@@ -34,6 +35,7 @@ export const api = {
   authStatus: () => call<AuthStatus>('GET', API.auth),
   login: (token: string) => call<AuthStatus>('POST', API.auth, { token }),
   logout: () => call<AuthStatus>('DELETE', API.auth),
+  ui: () => call<UiConfig>('GET', API.ui),
   favorites: () => call<Favorite[]>('GET', API.favorites),
   createSession: (req: CreateSessionRequest) => call<SessionInfo>('POST', API.sessions, req),
   renameSession: (id: string, req: RenameSessionRequest) =>

@@ -7,6 +7,7 @@ export const API = {
   auth: '/api/auth',
   favorites: '/api/favorites',
   sessions: '/api/sessions',
+  ui: '/api/ui',
 } as const;
 
 export const SESSION_STATES = ['idle', 'working', 'waiting_permission', 'done', 'error'] as const;
@@ -65,6 +66,12 @@ export interface CreateSessionRequest {
 
 export interface RenameSessionRequest {
   name: string;
+}
+
+/** Client-side settings that live in config.json. */
+export interface UiConfig {
+  /** One-tap messages in Compose mode (sent as paste + Enter). */
+  snippets: string[];
 }
 
 export interface ApiError {

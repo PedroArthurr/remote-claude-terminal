@@ -21,9 +21,13 @@ export interface Config {
   dataDir: string;
   /** Lines kept by each session's virtual terminal (and sent in snapshots). */
   scrollback: number;
+  /** Compose-mode quick messages. */
+  snippets: string[];
 }
 
 const DEFAULT_SCROLLBACK = 5000;
+const DEFAULT_SNIPPETS = ['/clear', '/compact', 'continue'];
+const MAX_SNIPPET_LENGTH = 4000;
 const MIN_SECRET_LENGTH = 32;
 
 export function configPath(): string {
@@ -90,6 +94,13 @@ function validate(c: Partial<Config>): Config {
   }
   if (c.scrollback === undefined) c.scrollback = DEFAULT_SCROLLBACK;
   else if (!Number.isInteger(c.scrollback) || c.scrollback < 0) errors.push('scrollback: expected integer >= 0');
+  if (c.snippets === undefined) c.snippets = DEFAULT_SNIPPETS;
+  else if (
+    !Array.isArray(c.snippets) ||
+    !c.snippets.every((t) => typeof t === 'string' && t.trim() !== '' && t.length <= MAX_SNIPPET_LENGTH)
+  ) {
+    errors.push(`snippets: expected non-empty strings (max ${MAX_SNIPPET_LENGTH} chars)`);
+  }
   if (typeof c.defaultCwd === 'string' && !existsSync(c.defaultCwd)) {
     errors.push(`defaultCwd: folder not found: ${c.defaultCwd}`);
   }
